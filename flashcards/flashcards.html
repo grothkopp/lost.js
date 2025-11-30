@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ffffff">
+    <title>Flashcards</title>
+    
+    <link rel="manifest" href="flashcards.webmanifest">
+    <link rel="stylesheet" href="/lost.css">
+    <link rel="stylesheet" href="app_flashcards.css">
+</head>
+<body>
+    <main id="app-stage">
+        <!-- Selection Mode -->
+        <div id="selection-screen" class="screen">
+            <h2>Choose your deck</h2>
+            <div class="deck-choices">
+                <button id="choose-front" class="deck-choice">
+                    <div class="card-preview">
+                        <span class="label-main" id="label-front-main">Front</span>
+                        <span class="label-sub">to Back</span>
+                    </div>
+                    <div class="deck-label"></div>
+                </button>
+                <button id="choose-back" class="deck-choice">
+                    <div class="card-preview">
+                        <span class="label-main" id="label-back-main">Back</span>
+                        <span class="label-sub">to Front</span>
+                    </div>
+                    <div class="deck-label"></div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Quiz Mode -->
+        <div id="quiz-screen" class="screen hidden">
+            <div class="progress-bar">
+                <div id="progress-fill"></div>
+            </div>
+            <div class="card-container">
+                <div id="card" class="card">
+                    <div class="card-face card-front">
+                        <span id="card-text-front"></span>
+                    </div>
+                    <div class="card-face card-back">
+                        <span id="card-text-back"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="controls">
+                <div id="flip-hint">Tap card to flip</div>
+                <div id="answer-buttons" class="hidden">
+                    <button id="btn-wrong" class="answer-btn wrong">Wrong</button>
+                    <button id="btn-right" class="answer-btn right">Right</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Mode -->
+        <div id="results-screen" class="screen hidden">
+            <h2>All Done!</h2>
+            <div id="results-stats"></div>
+            <button id="btn-restart">Start Over</button>
+        </div>
+    </main>
+
+    <dialog id="configDialog">
+        <div class="dialog-header">Settings</div>
+        <div class="dialog-body">
+            <label>
+                Deck Title:
+                <input type="text" id="configTitle">
+            </label>
+            <label>
+                Cards (Front - Back):
+                <textarea id="configContent" rows="10" placeholder="Front - Back"></textarea>
+            </label>
+        </div>
+        <div class="dialog-footer">
+            <button id="configCloseBtn">Close</button>
+        </div>
+    </dialog>
+
+    <script type="module" src="/lost.js"></script>
+    <script type="module" src="/lost-ui.js"></script>
+    <script type="module" src="app_flashcards.js"></script>
+</body>
+</html>
