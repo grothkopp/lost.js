@@ -1,0 +1,204 @@
+
+.stage {
+  position: relative;
+  width: min(92vmin, 840px);
+  aspect-ratio: 1 / 1;
+  /* left gutter for pointer */
+  margin: auto;
+}
+
+canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  /* Prevent scrolling and zooming on touch */
+}
+
+.go {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: clamp(96px, 22vmin, 180px);
+  height: clamp(96px, 22vmin, 180px);
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c00 60%);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: .6px;
+  font-size: clamp(20px, 3.6vmin, 32px);
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .75);
+  transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+}
+
+.go:active {
+  transform: scale(.98);
+}
+
+.go[disabled] {
+  filter: grayscale(.5) brightness(.8);
+  cursor: not-allowed;
+}
+
+/* Config modal */
+dialog#cfg {
+  position: relative;
+  border: 1px solid var(--ring);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 12px;
+  width: min(92vw, 880px);
+  padding: 16px;
+  overflow: hidden;
+}
+
+.cfg-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 720px) {
+  .cfg-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+  width: 100%;
+  border: 1px solid var(--ring);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+textarea {
+  min-height: 240px;
+  resize: vertical;
+  font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 0;
+  caret-color: var(--accent);
+  line-height: var(--chip-size)
+}
+
+.ta-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.chips-lane {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  width: calc(var(--chip-size) + 4px);
+  height: 100%;
+  pointer-events: none;
+}
+
+.chip {
+  position: absolute;
+  right: 2px;
+  width: var(--chip-size);
+  height: var(--chip-size);
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, .35);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .4) inset, 0 0 0 1px rgba(255, 255, 255, .05);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.palette {
+  position: absolute;
+  display: grid;
+  grid-template-columns: repeat(6, 24px);
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  z-index: 20;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+
+.palette button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, .15);
+  cursor: pointer;
+}
+
+.cfg-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.btn {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ring);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--panel);
+  border-color: var(--ring);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Winner overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(0, 0, 0, .5);
+  z-index: 40;
+}
+
+.overlay.show {
+  display: grid;
+}
+
+.winner-card {
+  min-width: min(70vw, 64.4vmin, 588px); /* ~70% of item width */
+  max-width: min(90vw, 900px);
+  padding: clamp(18px, 3.8vmin, 32px);
+  border: 1px solid var(--ring);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  text-align: center;
+}
+
+.winner-title {
+  font-size: clamp(28px, 6vmin, 64px);
+  font-weight: 800;
+  line-height: 1.15;
+  word-break: break-word;
+}

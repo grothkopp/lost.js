@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#c00" />
+  <link rel="manifest" href="/wheel/wheel.webmanifest">
+  <link rel="icon" href="/wheel/wheel.png" type="image/png">
+  <title>Wheel of Choices</title>
+  <link rel="stylesheet" href="/lost.css">
+  <link rel="stylesheet" href="/wheel/app_wheel.css">
+</head>
+<body>
+  <main>
+    <div class="stage" id="stage">
+      <canvas id="wheel" aria-label="Wheel"></canvas>
+      <button class="go" id="goBtn">Go!</button>
+    </div>
+      <button id="resetBtn" class="btn" style="display: none; margin: 20px auto;">Reset the wheel</button>
+  </main>
+
+  <dialog id="cfg">
+    <form method="dialog">
+      <div class="cfg-grid">
+        <div class="field">
+          <label for="wheelTitle">Title</label>
+          <input id="wheelTitle" type="text" maxlength="120" placeholder="Wheel title">
+          <div class="hint">Displayed at the top.</div>
+        </div>
+        <div class="field">
+          <label for="spinSecs">Spin time (seconds)</label>
+          <input id="spinSecs" type="number" min="1" max="60" step="0.5">
+          <div class="hint">Total duration. Default 7.</div>
+        </div>
+        <div class="field">
+          <label for="burnMode" style="display:flex; align-items:center; gap:8px; cursor:pointer">
+            <input id="burnMode" type="checkbox" style="width:auto; margin:0;">
+            <span>Burn Mode</span>
+          </label>
+          <div class="hint">Segments can only be picked once.</div>
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <label for="segmentsInput">Segments (one per line, 2–100)</label>
+          <div class="ta-wrap">
+            <textarea id="segmentsInput" wrap="off" spellcheck="false"></textarea>
+            <div class="chips-lane" id="chipsLane" aria-hidden="true"></div>
+          </div>
+          <div class="hint" id="segCountHint"></div>
+        </div>
+      </div>
+      <div class="cfg-actions">
+        <button class="btn" id="randColors" type="button">Randomize colors</button>
+        <span style="flex:1 1 auto"></span>
+        <button class="btn" id="cfgCancel" value="cancel" type="submit">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="overlay" id="winnerOverlay" role="dialog" aria-modal="true">
+    <div class="winner-card" id="winnerCard">
+      <div class="winner-title" id="winnerTitle"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/wheel/app_wheel.js"></script>
+</body>
+</html>
+
