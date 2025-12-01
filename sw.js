@@ -29,12 +29,12 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(request.url);
     let cacheKey = request;
-    if (url.pathname === '/' || url.pathname.endsWith('/index.html')) {
+    //if (url.pathname === '/' || url.pathname.endsWith('/index.html')) {
       const cleanUrl = new URL(request.url);
       cleanUrl.search = '';
       cleanUrl.hash = '';
       cacheKey = cleanUrl.toString();
-    }
+    //}
 
     const cached = await cache.match(cacheKey);
 

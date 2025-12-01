@@ -395,30 +395,36 @@ class WheelApp {
       const offsetFromOuter = 14 * scale + 8;
       const textRadius = rOuter - offsetFromOuter;
       const availableWidth = Math.max(10, textRadius - (rInner + 12));
-
       const theta = Math.PI * 2 / n;
 
-      // Adjust for longest label
+      // Measure text at a reference size to determine width/size ratio
       const fontStack = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const refFontSize = 24;
       this.ctx.save();
-      this.ctx.font = `10px ${fontStack}`;
-      let maxTextWidth = 0;
+      this.ctx.font = `${refFontSize}px ${fontStack}`;
+      let maxRefWidth = 0;
       for (const seg of this.renderSegments) {
           const w = this.ctx.measureText(seg.label.trim()).width;
-          if (w > maxTextWidth) maxTextWidth = w;
+          if (w > maxRefWidth) maxRefWidth = w;
       }
       this.ctx.restore();
 
-      const innerTextRadius = rOuter - offsetFromOuter - maxTextWidth
-      const segmentHeight = 2 * innerTextRadius * Math.sin(theta / 2);
-      let fontSize = Math.max(8, Math.min(48, thickness * 0.22, segmentHeight * 0.75));
+      const widthPerPx = maxRefWidth / refFontSize;
 
-      if (maxTextWidth > 0) {
-          const sizeToFit = availableWidth * (10 / maxTextWidth);
-          if (sizeToFit < fontSize) {
-              fontSize = Math.max(8, sizeToFit);
-          }
-      }
+      // Constraint 1: Chord length at the inner end of text
+      // F <= 0.75 * 2 * sin(theta/2) * (textRadius - F * widthPerPx)
+      // F (1 + K * widthPerPx) <= K * textRadius
+      const K = 1.5 * Math.sin(theta / 2);
+      const maxChordSize = (K * textRadius) / (1 + K * widthPerPx);
+
+      // Constraint 2: Radial length (must fit between rOuter and rInner)
+      const maxRadialSize = widthPerPx > 0 ? availableWidth / widthPerPx : 100;
+
+      // Constraint 3: General limits (thickness ratio, absolute max)
+      const maxThicknessSize = thickness * 0.22;
+
+      let fontSize = Math.min(48, maxChordSize, maxRadialSize, maxThicknessSize);
+      fontSize = Math.max(8, Math.floor(fontSize));
 
       for (let i = 0; i < n; i++) {
           const a0 = i * theta + this.rot;
