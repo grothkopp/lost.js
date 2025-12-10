@@ -41,6 +41,18 @@
   flex-wrap: wrap;
 }
 
+.toolbar-run-group {
+  display: flex;
+  gap: 6px;
+}
+
+.run-all-btn,
+.stop-all-btn {
+  font-size: 16px;
+  line-height: 1;
+  padding: 8px 12px;
+}
+
 .notebook-title-label {
   display: flex;
   flex-direction: column;
@@ -196,6 +208,10 @@
   color: #dc2626;
 }
 
+.cell-status.stale {
+  color: #d97706;
+}
+
 .cell-actions {
   display: flex;
   align-items: center;
@@ -217,6 +233,28 @@
 
 .cell-action-btn:hover {
   background: rgba(148, 163, 184, 0.16);
+}
+
+.cell-action-btn.run-btn {
+  color: #4b5563;
+}
+
+.cell-action-btn.run-btn.is-stale {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.4);
+}
+
+.cell-action-btn.run-btn.is-running {
+  opacity: 0.7;
+}
+
+.cell-action-btn.stop-btn {
+  color: #4b5563;
+}
+
+.cell-action-btn.stop-btn.is-running {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.6);
 }
 
 .cell-action-btn.danger {
@@ -269,6 +307,37 @@
 .cell-output-empty {
   opacity: 0.6;
   font-style: italic;
+}
+
+.cell-output.stale {
+  border-color: rgba(250, 204, 21, 0.9);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.cell-output-json {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  white-space: pre;
+}
+
+.json-key {
+  color: #2563eb;
+}
+
+.json-string {
+  color: #16a34a;
+}
+
+.json-number {
+  color: #d97706;
+}
+
+.json-boolean {
+  color: #7c3aed;
+}
+
+.json-null {
+  color: #9ca3af;
 }
 
 /* Small icon-like buttons */

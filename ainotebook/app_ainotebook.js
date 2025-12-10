@@ -15,7 +15,8 @@ const DEFAULT_NOTEBOOK = {
       text: "# New notebook\n\nWrite some notes here…",
       modelId: "",
       lastOutput: "",
-      error: ""
+      error: "",
+      stale: false
     },
     {
       id: "cell_summary",
@@ -26,7 +27,8 @@ const DEFAULT_NOTEBOOK = {
         "Respond in Markdown.",
       modelId: "",
       lastOutput: "",
-      error: ""
+      error: "",
+      stale: false
     }
   ]
 };
@@ -112,12 +114,17 @@ class AiNotebookApp {
     this.llmListEl = document.getElementById("llmList");
     this.addLlmBtn = document.getElementById("addLlmBtn");
     this.settingsCloseBtn = document.getElementById("settingsCloseBtn");
+    this.runAllBtn = document.getElementById("runAllBtn");
+    this.stopAllBtn = document.getElementById("stopAllBtn");
 
     // ---------- runtime state ----------
     this.currentNotebook = null;
     this.llmSettings = this.loadLlmSettings();
     this.runningControllers = new Map(); // cellId -> AbortController
     this.runningCells = new Set(); // cellId
+    this.stopAllRequested = false;
+    this.parsedOutputs = new Map(); // key -> parsed JSON value
+    this.runAllInFlight = false;
 
     this.bindEvents();
     this.init();
@@ -149,6 +156,9 @@ class AiNotebookApp {
     );
     this.addPromptBtn.addEventListener("click", () => this.addCell("prompt"));
     this.addVarBtn.addEventListener("click", () => this.addCell("variable"));
+
+    this.runAllBtn.addEventListener("click", () => this.runAllPromptCells());
+    this.stopAllBtn.addEventListener("click", () => this.stopAllCells());
 
     // Settings dialog
     this.addLlmBtn.addEventListener("click", () => this.addLlmRow());
@@ -380,19 +390,157 @@ class AiNotebookApp {
           : `Explain {{md_${index - 1} || notes}}`,
       modelId: "",
       lastOutput: "",
-      error: ""
+      error: "",
+      stale: false
     };
 
     cells.push(cell);
     this.lost.update(item.id, { cells });
   }
 
-  updateCells(transformFn) {
+  updateCells(transformFn, options = {}) {
     const item = this.lost.getCurrent();
     if (!item) return;
-    const cells = Array.isArray(item.cells) ? [...item.cells] : [];
-    const newCells = transformFn(cells);
-    this.lost.update(item.id, { cells: newCells });
+    const prevCells = Array.isArray(item.cells) ? [...item.cells] : [];
+    const newCellsRaw = transformFn(prevCells.map((c) => ({ ...c }))) || [];
+    const nextCells = Array.isArray(newCellsRaw) ? newCellsRaw : [];
+    const finalCells = this.applyStaleness(prevCells, nextCells, options);
+    this.lost.update(item.id, { cells: finalCells });
+  }
+
+  getCellKeys(cell, index) {
+    const keys = [];
+    if (!cell) return keys;
+    const name = (cell.name || "").trim();
+    keys.push(`#${index + 1}`);
+    keys.push(`out${index + 1}`);
+    if (cell.id) keys.push(cell.id);
+    if (name) keys.push(name);
+    return Array.from(keys);
+  }
+
+  parseKeyPath(expr) {
+    const trimmed = (expr || "").trim();
+    const baseMatch = trimmed.match(/^([A-Za-z0-9_#]+)/);
+    if (!baseMatch) return { base: "", path: [] };
+    const base = baseMatch[1];
+    let rest = trimmed.slice(base.length);
+    const path = [];
+    const bracketRe =
+      /^\s*\[\s*(?:"([^"]+)"|'([^']+)'|([0-9]+))\s*\]\s*/;
+    while (rest.length) {
+      const m = rest.match(bracketRe);
+      if (!m) break;
+      const key = m[1] ?? m[2] ?? m[3];
+      path.push(key);
+      rest = rest.slice(m[0].length);
+    }
+    return { base, path };
+  }
+
+  parseReferencesFromText(text) {
+    if (!text || typeof text !== "string") return [];
+    const refs = new Set();
+    text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
+      const { base } = this.parseKeyPath(expr);
+      if (base) refs.add(base);
+      return "";
+    });
+    return Array.from(refs);
+  }
+
+  buildReferenceIndex(cells) {
+    const map = new Map(); // baseKey -> Set(cellId)
+    (Array.isArray(cells) ? cells : []).forEach((cell) => {
+      if (cell.type !== "prompt" && cell.type !== "markdown") return;
+      const refs = this.parseReferencesFromText(cell.text || "");
+      refs.forEach((ref) => {
+        if (!map.has(ref)) map.set(ref, new Set());
+        map.get(ref).add(cell.id);
+      });
+    });
+    return map;
+  }
+
+  collectCellKeys(prevCells, newCells, cellId) {
+    const keys = new Set();
+    const newIdx = newCells.findIndex((c) => c.id === cellId);
+    if (newIdx >= 0) {
+      this.getCellKeys(newCells[newIdx], newIdx).forEach((k) => keys.add(k));
+    }
+    const prevIdx = prevCells.findIndex((c) => c.id === cellId);
+    if (prevIdx >= 0) {
+      this.getCellKeys(prevCells[prevIdx], prevIdx).forEach((k) =>
+        keys.add(k)
+      );
+    }
+    return Array.from(keys);
+  }
+
+  applyStaleness(prevCells, newCells, options = {}) {
+    const changedIds = new Set(options.changedIds || []);
+    const reason = options.reason || "content";
+
+    const next = (Array.isArray(newCells) ? newCells : []).map((c) => ({
+      ...c,
+      stale: !!c.stale
+    }));
+    const prevList = (Array.isArray(prevCells) ? prevCells : []).map((c) => ({
+      ...c,
+      stale: !!c.stale
+    }));
+
+    const refPrev = this.buildReferenceIndex(prevList);
+    const refNew = this.buildReferenceIndex(next);
+
+    const queue = [];
+    const seenKeys = new Set();
+
+    const enqueueKeys = (cellId) => {
+      this.collectCellKeys(prevList, next, cellId).forEach((k) => {
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          queue.push(k);
+        }
+      });
+    };
+
+    // Initialize staleness on changed cells
+    changedIds.forEach((id) => {
+      const cell = next.find((c) => c.id === id);
+      if (cell) {
+        if (reason === "output") {
+          cell.stale = false;
+        } else {
+          cell.stale = true;
+        }
+      }
+      enqueueKeys(id);
+    });
+
+    // Propagate staleness to dependents recursively
+    const markCellStale = (cellId) => {
+      const cell = next.find((c) => c.id === cellId);
+      if (cell && !cell.stale) {
+        cell.stale = true;
+        enqueueKeys(cellId);
+      }
+    };
+
+    while (queue.length) {
+      const key = queue.shift();
+      const refSet = new Set([
+        ...(refPrev.get(key) || []),
+        ...(refNew.get(key) || [])
+      ]);
+      refSet.forEach((cellId) => {
+        // Avoid marking the cell that just produced fresh output as stale
+        if (reason === "output" && changedIds.has(cellId)) return;
+        markCellStale(cellId);
+      });
+    }
+
+    return next;
   }
 
   // ---------- Rendering ----------
@@ -402,6 +550,13 @@ class AiNotebookApp {
     if (!item) return;
 
     const focusState = this.captureFocusState();
+
+    // Toolbar actions state
+    const anyRunning = this.runningCells.size > 0;
+    this.runAllBtn.disabled = this.runAllInFlight || anyRunning;
+    this.stopAllBtn.disabled = !anyRunning;
+    this.runAllBtn.classList.toggle("is-running", this.runAllInFlight);
+    this.stopAllBtn.classList.toggle("is-running", anyRunning);
 
     // Toolbar
     if (document.activeElement !== this.notebookTitleInput) {
@@ -505,12 +660,16 @@ class AiNotebookApp {
 
       const statusSpan = document.createElement("span");
       statusSpan.className = "cell-status";
+      const isRunning = this.runningCells.has(cell.id);
       if (this.runningCells.has(cell.id)) {
         statusSpan.classList.add("running");
         statusSpan.textContent = "Running…";
       } else if (cell.error) {
         statusSpan.classList.add("error");
         statusSpan.textContent = "Error";
+      } else if (cell.type === "prompt" && cell.stale) {
+        statusSpan.classList.add("stale");
+        statusSpan.textContent = "Stale";
       } else if (cell.type === "prompt" && cell.lastOutput) {
         statusSpan.textContent = "Done";
       } else {
@@ -525,16 +684,20 @@ class AiNotebookApp {
       if (cell.type === "prompt") {
         const runBtn = document.createElement("button");
         runBtn.type = "button";
-        runBtn.className = "cell-action-btn";
-        runBtn.textContent = "Run";
-        runBtn.disabled = this.runningCells.has(cell.id);
+        runBtn.className = "cell-action-btn run-btn";
+        runBtn.textContent = "▶";
+        const isStale = !!cell.stale || !cell.lastOutput;
+        runBtn.disabled = isRunning;
+        runBtn.classList.toggle("is-stale", isStale && !isRunning);
+        runBtn.classList.toggle("is-running", isRunning);
         actions.appendChild(runBtn);
 
         const stopBtn = document.createElement("button");
         stopBtn.type = "button";
-        stopBtn.className = "cell-action-btn";
-        stopBtn.textContent = "Stop";
-        stopBtn.disabled = !this.runningCells.has(cell.id);
+        stopBtn.className = "cell-action-btn stop-btn";
+        stopBtn.textContent = "■";
+        stopBtn.disabled = !isRunning;
+        stopBtn.classList.toggle("is-running", isRunning);
         actions.appendChild(stopBtn);
 
         runBtn.addEventListener("click", () => this.runPromptCell(cell.id));
@@ -598,7 +761,10 @@ class AiNotebookApp {
           : cell.type === "variable"
           ? cell.text || ""
           : cell.text || "";
-
+      const parsed =
+        cell.type === "prompt" || cell.type === "variable"
+          ? this.parseJsonOutput(outputText)
+          : { isJson: false, value: outputText };
       if (!outputText) {
         output.classList.add("cell-output-empty");
         outputText =
@@ -606,7 +772,15 @@ class AiNotebookApp {
             ? "No output yet. Run this cell."
             : "Empty.";
       }
-      output.textContent = outputText;
+      if (parsed.isJson) {
+        output.classList.add("cell-output-json");
+        output.innerHTML = this.renderJsonHighlighted(parsed.value);
+      } else {
+        output.textContent = outputText;
+      }
+      if (cell.stale && cell.type === "prompt") {
+        output.classList.add("stale");
+      }
       body.appendChild(output);
 
       root.appendChild(body);
@@ -620,7 +794,7 @@ class AiNotebookApp {
             c.id === cell.id ? { ...c, name: e.target.value } : c
           );
           return next;
-        });
+        }, { changedIds: [cell.id] });
       });
 
       typeSelect.addEventListener("change", (e) => {
@@ -636,7 +810,7 @@ class AiNotebookApp {
                 }
               : c
           );
-        });
+        }, { changedIds: [cell.id] });
       });
 
       llmSelect.addEventListener("change", (e) => {
@@ -644,7 +818,8 @@ class AiNotebookApp {
         this.updateCells((cells) =>
           cells.map((c) =>
             c.id === cell.id ? { ...c, modelId: value } : c
-          )
+          ),
+          { changedIds: [cell.id] }
         );
       });
 
@@ -653,7 +828,8 @@ class AiNotebookApp {
         this.updateCells((cells) =>
           cells.map((c) =>
             c.id === cell.id ? { ...c, text, error: "" } : c
-          )
+          ),
+          { changedIds: [cell.id] }
         );
       });
 
@@ -775,6 +951,8 @@ class AiNotebookApp {
 
       const idxKey = `#${index + 1}`;
       env[idxKey] = value;
+      const outKey = `out${index + 1}`;
+      env[outKey] = value;
 
       if (c.id) env[c.id] = value;
 
@@ -787,13 +965,50 @@ class AiNotebookApp {
     return env;
   }
 
+  resolveTemplateValue(expr, env) {
+    const { base, path } = this.parseKeyPath(expr);
+    if (!base) return "";
+
+    const baseValue =
+      this.parsedOutputs.has(base) && path.length
+        ? this.parsedOutputs.get(base)
+        : env[base];
+
+    if (path.length) {
+      let current =
+        this.parsedOutputs.has(base) && baseValue === undefined
+          ? this.parsedOutputs.get(base)
+          : baseValue;
+      if (current === undefined) return "";
+      for (const key of path) {
+        const isIndex = /^[0-9]+$/.test(key);
+        if (isIndex && Array.isArray(current)) {
+          current = current[Number(key)];
+        } else if (
+          current !== null &&
+          typeof current === "object" &&
+          Object.prototype.hasOwnProperty.call(current, key)
+        ) {
+          current = current[key];
+        } else {
+          return "";
+        }
+      }
+      if (current === undefined || current === null) return "";
+      if (typeof current === "object") return JSON.stringify(current);
+      return String(current);
+    }
+
+    if (baseValue === undefined || baseValue === null) return "";
+    if (typeof baseValue === "object") return JSON.stringify(baseValue);
+    return String(baseValue);
+  }
+
   expandTemplate(template, env) {
     if (!template) return "";
     return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, key) => {
       const trimmed = key.trim();
-      return Object.prototype.hasOwnProperty.call(env, trimmed)
-        ? String(env[trimmed])
-        : "";
+      return this.resolveTemplateValue(trimmed, env);
     });
   }
 
@@ -831,34 +1046,42 @@ class AiNotebookApp {
     try {
       const output = await this.callLLM(model, finalPrompt, controller.signal);
       // Persist output & clear error
-      this.updateCells((cells) =>
-        cells.map((c) =>
-          c.id === cellId
-            ? {
-                ...c,
-                lastOutput: output || "",
-                error: ""
-              }
-            : c
-        )
+      this.updateCells(
+        (cells) =>
+          cells.map((c) =>
+            c.id === cellId
+              ? {
+                  ...c,
+                  lastOutput: output || "",
+                  error: ""
+                }
+              : c
+          ),
+        { changedIds: [cellId], reason: "output" }
       );
     } catch (err) {
-      console.error("LLM call failed", err);
-      const msg =
-        err && typeof err.message === "string"
-          ? err.message
-          : "LLM request failed.";
-      this.updateCells((cells) =>
-        cells.map((c) =>
-          c.id === cellId
-            ? {
-                ...c,
-                error: msg
-              }
-            : c
-        )
-      );
-      alert("LLM error: " + msg);
+      if (err?.name === "AbortError") {
+        // Silently ignore aborts
+      } else {
+        console.error("LLM call failed", err);
+        const msg =
+          err && typeof err.message === "string"
+            ? err.message
+            : "LLM request failed.";
+        this.updateCells(
+          (cells) =>
+            cells.map((c) =>
+              c.id === cellId
+                ? {
+                    ...c,
+                    error: msg
+                  }
+                : c
+            ),
+          { changedIds: [cellId] }
+        );
+        alert("LLM error: " + msg);
+      }
     } finally {
       this.runningControllers.delete(cellId);
       this.runningCells.delete(cellId);
@@ -874,6 +1097,79 @@ class AiNotebookApp {
     }
     this.runningCells.delete(cellId);
     this.renderNotebook();
+  }
+
+  async runAllPromptCells() {
+    const item = this.lost.getCurrent();
+    if (!item) return;
+    const promptCells = (Array.isArray(item.cells) ? item.cells : []).filter(
+      (c) => c.type === "prompt"
+    );
+    if (!promptCells.length) return;
+
+    this.stopAllRequested = false;
+    this.runAllInFlight = true;
+    this.renderNotebook();
+
+    for (const cell of promptCells) {
+      if (this.stopAllRequested) break;
+      await this.runPromptCell(cell.id);
+    }
+
+    this.runAllInFlight = false;
+    this.stopAllRequested = false;
+    this.renderNotebook();
+  }
+
+  stopAllCells() {
+    this.stopAllRequested = true;
+    this.runningControllers.forEach((controller) => controller.abort());
+    this.runningControllers.clear();
+    this.runningCells.clear();
+    this.runAllInFlight = false;
+    this.renderNotebook();
+  }
+
+  parseJsonOutput(text) {
+    if (typeof text !== "string") return { isJson: false, value: text };
+    try {
+      const parsed = JSON.parse(text);
+      return { isJson: true, value: parsed };
+    } catch {
+      return { isJson: false, value: text };
+    }
+  }
+
+  escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  renderJsonHighlighted(value) {
+    const jsonStr = JSON.stringify(value, null, 2);
+    const escaped = this.escapeHtml(jsonStr);
+    const highlighted = escaped.replace(
+      /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?=\s*:)|"(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b/g,
+      (match, str, _p2, _p3, number, boolOrNull) => {
+        if (str) {
+          const isKey = /"$/.test(str) && /:$/.test(match);
+          return `<span class="${isKey ? "json-key" : "json-string"}">${str}</span>`;
+        }
+        if (number !== undefined) {
+          return `<span class="json-number">${number}</span>`;
+        }
+        if (boolOrNull !== undefined) {
+          const cls = boolOrNull === "null" ? "json-null" : "json-boolean";
+          return `<span class="${cls}">${boolOrNull}</span>`;
+        }
+        return match;
+      }
+    );
+    return highlighted;
   }
 
   async callLLM(model, prompt, signal) {
