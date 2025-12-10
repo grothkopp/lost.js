@@ -1,5 +1,6 @@
 import { Lost } from "/lost.js";
 import { LostUI } from "/lost-ui.js";
+import MarkdownIt from "https://esm.sh/markdown-it@13.0.1";
 
 const STORAGE_KEY = "app-ainotebook-v1";
 const LLM_SETTINGS_KEY = "ainotebook-llm-settings-v1";
@@ -125,6 +126,13 @@ class AiNotebookApp {
     this.stopAllRequested = false;
     this.parsedOutputs = new Map(); // key -> parsed JSON value
     this.runAllInFlight = false;
+    this.lastFocusedEditor = null;
+    this.md = new MarkdownIt({
+      html: false,
+      linkify: true,
+      breaks: true
+    });
+    this.referenceMenu = null;
 
     this.bindEvents();
     this.init();
@@ -419,6 +427,25 @@ class AiNotebookApp {
     return Array.from(keys);
   }
 
+  getPreferredRef(cell, index) {
+    const name = (cell?.name || "").trim();
+    if (name) return name;
+    return `out${index + 1}`;
+  }
+
+  buildRefExpression(base, path = []) {
+    const parts =
+      Array.isArray(path) && path.length
+        ? path.map((p) => (String(p).match(/^[0-9]+$/) ? `[${p}]` : `['${p}']`))
+        : [];
+    return `${base}${parts.join("")}`;
+  }
+
+  storeParsedOutputKeys(cell, index, value) {
+    const keys = this.getCellKeys(cell, index);
+    keys.forEach((k) => this.parsedOutputs.set(k, value));
+  }
+
   parseKeyPath(expr) {
     const trimmed = (expr || "").trim();
     const baseMatch = trimmed.match(/^([A-Za-z0-9_#]+)/);
@@ -550,6 +577,7 @@ class AiNotebookApp {
     if (!item) return;
 
     const focusState = this.captureFocusState();
+    this.parsedOutputs.clear();
 
     // Toolbar actions state
     const anyRunning = this.runningCells.size > 0;
@@ -599,6 +627,7 @@ class AiNotebookApp {
       const root = document.createElement("article");
       root.className = "cell";
       root.dataset.id = cell.id;
+      const baseRef = this.getPreferredRef(cell, index);
 
       // ----- Header -----
       const header = document.createElement("header");
@@ -772,16 +801,45 @@ class AiNotebookApp {
             ? "No output yet. Run this cell."
             : "Empty.";
       }
-      if (parsed.isJson) {
+      if (cell.type === "markdown") {
+        output.classList.add("cell-output-markdown");
+        output.innerHTML = this.md.render(cell.text || "");
+      } else if (parsed.isJson) {
         output.classList.add("cell-output-json");
-        output.innerHTML = this.renderJsonHighlighted(parsed.value);
+        this.storeParsedOutputKeys(cell, index, parsed.value);
+        output.innerHTML = this.renderJsonInteractive(parsed.value, baseRef);
       } else {
         output.textContent = outputText;
       }
       if (cell.stale && cell.type === "prompt") {
         output.classList.add("stale");
       }
+      // Click to insert refs
+      output.addEventListener("click", (e) => {
+        const target = e.target.closest(".ref-click");
+        if (target?.dataset?.ref) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.insertReference(target.dataset.ref);
+        }
+      });
       body.appendChild(output);
+
+      // Quick ref helper for non-JSON outputs
+      if (!parsed.isJson) {
+        const refHint = document.createElement("div");
+        refHint.className = "cell-ref-hint";
+        refHint.innerHTML = `<span class="ref-click" data-ref="{{ ${baseRef} }}">Insert {{ ${baseRef} }}</span>`;
+        refHint.addEventListener("click", (e) => {
+          const target = e.target.closest(".ref-click");
+          if (target?.dataset?.ref) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.insertReference(target.dataset.ref);
+          }
+        });
+        body.appendChild(refHint);
+      }
 
       root.appendChild(body);
       this.cellsContainer.appendChild(root);
@@ -831,6 +889,9 @@ class AiNotebookApp {
           ),
           { changedIds: [cell.id] }
         );
+      });
+      textarea.addEventListener("focus", () => {
+        this.lastFocusedEditor = textarea;
       });
 
       upBtn.addEventListener("click", () => {
@@ -1170,6 +1231,84 @@ class AiNotebookApp {
       }
     );
     return highlighted;
+  }
+
+  renderJsonInteractive(value, baseRef, path = [], depth = 0) {
+    const pad = "  ".repeat(depth);
+    const refExpr = this.buildRefExpression(baseRef, path);
+
+    const renderPrimitive = (val) => {
+      if (val === null) return `<span class="json-null">null</span>`;
+      if (typeof val === "string")
+        return `<span class="json-string">"${this.escapeHtml(val)}"</span>`;
+      if (typeof val === "number")
+        return `<span class="json-number">${val}</span>`;
+      if (typeof val === "boolean")
+        return `<span class="json-boolean">${val}</span>`;
+      return `<span>${this.escapeHtml(String(val))}</span>`;
+    };
+
+    if (value === null || typeof value !== "object") {
+      return `<span class="ref-click" data-ref="{{ ${refExpr} }}">${renderPrimitive(
+        value
+      )}</span>`;
+    }
+
+    if (Array.isArray(value)) {
+      const inner = value
+        .map(
+          (v, i) =>
+            `${pad}  <span class="json-key ref-click" data-ref="{{ ${this.buildRefExpression(
+              baseRef,
+              [...path, i]
+            )} }}">[${i}]</span>: ${this.renderJsonInteractive(
+              v,
+              baseRef,
+              [...path, i],
+              depth + 1
+            )}`
+        )
+        .join("\n");
+      return `[\n${inner}\n${pad}]`;
+    }
+
+    // object
+    const entries = Object.entries(value);
+    const inner = entries
+      .map(([k, v]) => {
+        const nextPath = [...path, k];
+        const keyRef = this.buildRefExpression(baseRef, nextPath);
+        return `${pad}  "<span class="json-key ref-click" data-ref="{{ ${keyRef} }}">${this.escapeHtml(
+          k
+        )}</span>": ${this.renderJsonInteractive(
+          v,
+          baseRef,
+          nextPath,
+          depth + 1
+        )}`;
+      })
+      .join("\n");
+    return `{\n${inner}\n${pad}}`;
+  }
+
+  insertReference(ref) {
+    const target =
+      this.lastFocusedEditor && document.body.contains(this.lastFocusedEditor)
+        ? this.lastFocusedEditor
+        : document.activeElement;
+    if (!target || target.tagName !== "TEXTAREA") {
+      navigator.clipboard?.writeText?.(ref).catch(() => {});
+      return;
+    }
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const before = target.value.slice(0, start);
+    const after = target.value.slice(end);
+    target.value = before + ref + after;
+    const newPos = before.length + ref.length;
+    target.setSelectionRange(newPos, newPos);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.focus({ preventScroll: true });
   }
 
   async callLLM(model, prompt, signal) {
