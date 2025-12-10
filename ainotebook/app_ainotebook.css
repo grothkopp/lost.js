@@ -205,6 +205,12 @@
   color: #16a34a;
 }
 
+.cell-status .running-timer {
+  margin-left: 6px;
+  color: #374151;
+  font-weight: 600;
+}
+
 .cell-status.error {
   color: #dc2626;
 }
@@ -292,17 +298,69 @@
 .cell-help {
   font-size: 11px;
   color: var(--nb-muted);
+  display: none;
+}
+
+.cell-input-preview {
+  border-radius: 8px;
+  border: 1px dashed rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.08);
+  padding: 8px 10px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  color: var(--nb-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.template-ref {
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.template-ref:hover {
+  background: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+}
+
+.template-preview-empty {
+  color: var(--nb-muted);
+}
+
+.var-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(320px, 70vw);
+  background: var(--nb-bg);
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.16);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+  display: none;
 }
 
 .cell-output {
   margin-top: 6px;
   border-radius: 8px;
   border: 1px dashed rgba(148, 163, 184, 0.8);
-  background: rgba(15, 23, 42, 0.02);
+  background: rgba(148, 163, 184, 0.12); /* lighter in light mode, still readable in dark */
   padding: 8px 10px;
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cell-output.cell-output-markdown {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: initial;
 }
 
 .cell-output-empty {
@@ -313,6 +371,12 @@
 .cell-output.stale {
   border-color: rgba(250, 204, 21, 0.9);
   background: rgba(250, 204, 21, 0.08);
+}
+
+.cell-run-meta {
+  font-size: 11px;
+  color: var(--nb-muted);
+  margin-top: 6px;
 }
 
 .cell-output-json {
@@ -370,6 +434,15 @@
 
 .icon-btn:hover {
   background: rgba(148, 163, 184, 0.2);
+}
+
+.icon-btn.delete-btn {
+  color: #4b5563;
+  transition: color 120ms ease;
+}
+
+.icon-btn.delete-btn:hover {
+  color: #dc2626;
 }
 
 /* Settings dialog */

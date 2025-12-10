@@ -133,6 +133,10 @@ class AiNotebookApp {
       breaks: true
     });
     this.referenceMenu = null;
+    this.varTooltipEl = null;
+    this.templateHoverCache = new WeakMap();
+    this.runningStartTimes = new Map(); // cellId -> timestamp
+    this.runningTimerId = null;
 
     this.bindEvents();
     this.init();
@@ -621,6 +625,7 @@ class AiNotebookApp {
   renderCells() {
     const item = this.currentNotebook;
     const cells = Array.isArray(item.cells) ? item.cells : [];
+    const env = this.buildEnvironment(item);
     this.cellsContainer.innerHTML = "";
 
     cells.forEach((cell, index) => {
@@ -664,28 +669,28 @@ class AiNotebookApp {
       typeSelect.value = cell.type || "markdown";
       header.appendChild(typeSelect);
 
-      const llmSelect = document.createElement("select");
-      llmSelect.className = "cell-llm-select";
-      const useDefaultOpt = document.createElement("option");
-      const nbModel = this.currentNotebook?.notebookModelId || "";
-      const nbModelLabel = this.getModelLabelById(nbModel);
-      useDefaultOpt.value = "";
-      useDefaultOpt.textContent = nbModel
-        ? `Use notebook default (${nbModelLabel})`
-        : "Use notebook default";
-      llmSelect.appendChild(useDefaultOpt);
+      let llmSelect = null;
+      if (cell.type === "prompt") {
+        llmSelect = document.createElement("select");
+        llmSelect.className = "cell-llm-select";
+        const useDefaultOpt = document.createElement("option");
+        const nbModel = this.currentNotebook?.notebookModelId || "";
+        const nbModelLabel = this.getModelLabelById(nbModel);
+        useDefaultOpt.value = "";
+        useDefaultOpt.textContent = nbModel
+          ? `Use notebook default (${nbModelLabel})`
+          : "Use notebook default";
+        llmSelect.appendChild(useDefaultOpt);
 
-      for (const m of this.llmSettings.models) {
-        const opt = document.createElement("option");
-        opt.value = m.id;
-        opt.textContent = m.label || `${m.provider}:${m.model}`;
-        llmSelect.appendChild(opt);
+        for (const m of this.llmSettings.models) {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.label || `${m.provider}:${m.model}`;
+          llmSelect.appendChild(opt);
+        }
+        llmSelect.value = cell.modelId || "";
+        header.appendChild(llmSelect);
       }
-      llmSelect.value = cell.modelId || "";
-      if (cell.type !== "prompt") {
-        llmSelect.disabled = true;
-      }
-      header.appendChild(llmSelect);
 
       const statusSpan = document.createElement("span");
       statusSpan.className = "cell-status";
@@ -693,6 +698,13 @@ class AiNotebookApp {
       if (this.runningCells.has(cell.id)) {
         statusSpan.classList.add("running");
         statusSpan.textContent = "Running…";
+        const timerSpan = document.createElement("span");
+        timerSpan.className = "running-timer";
+        const startedAt = this.runningStartTimes.get(cell.id);
+        timerSpan.textContent = this.formatDuration(
+          startedAt ? Date.now() - startedAt : 0
+        );
+        statusSpan.appendChild(timerSpan);
       } else if (cell.error) {
         statusSpan.classList.add("error");
         statusSpan.textContent = "Error";
@@ -749,10 +761,9 @@ class AiNotebookApp {
 
       const delBtn = document.createElement("button");
       delBtn.type = "button";
-      delBtn.className = "icon-btn";
+      delBtn.className = "icon-btn delete-btn";
       delBtn.title = "Delete cell";
       delBtn.textContent = "✕";
-      delBtn.style.color = "#dc2626";
       actions.appendChild(delBtn);
 
       header.appendChild(actions);
@@ -803,7 +814,8 @@ class AiNotebookApp {
       }
       if (cell.type === "markdown") {
         output.classList.add("cell-output-markdown");
-        output.innerHTML = this.md.render(cell.text || "");
+        const expanded = this.expandTemplate(cell.text || "", env);
+        output.innerHTML = this.md.render(expanded);
       } else if (parsed.isJson) {
         output.classList.add("cell-output-json");
         this.storeParsedOutputKeys(cell, index, parsed.value);
@@ -814,6 +826,19 @@ class AiNotebookApp {
       if (cell.stale && cell.type === "prompt") {
         output.classList.add("stale");
       }
+      if (cell.type === "prompt" && cell.lastRunInfo) {
+        const meta = document.createElement("div");
+        meta.className = "cell-run-meta";
+        const info = cell.lastRunInfo || {};
+        const parts = [];
+        if (info.tokensIn != null) parts.push(`tokens in: ${info.tokensIn}`);
+        if (info.tokensOut != null) parts.push(`tokens out: ${info.tokensOut}`);
+        if (info.durationMs != null)
+          parts.push(`time: ${this.formatDuration(info.durationMs)}`);
+        if (info.model) parts.push(`model: ${info.model}`);
+        meta.textContent = parts.join(" · ");
+        body.appendChild(meta);
+      }
       // Click to insert refs
       output.addEventListener("click", (e) => {
         const target = e.target.closest(".ref-click");
@@ -821,25 +846,15 @@ class AiNotebookApp {
           e.preventDefault();
           e.stopPropagation();
           this.insertReference(target.dataset.ref);
+          return;
+        }
+        if (!parsed.isJson) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.insertReference(`{{ ${baseRef} }}`);
         }
       });
       body.appendChild(output);
-
-      // Quick ref helper for non-JSON outputs
-      if (!parsed.isJson) {
-        const refHint = document.createElement("div");
-        refHint.className = "cell-ref-hint";
-        refHint.innerHTML = `<span class="ref-click" data-ref="{{ ${baseRef} }}">Insert {{ ${baseRef} }}</span>`;
-        refHint.addEventListener("click", (e) => {
-          const target = e.target.closest(".ref-click");
-          if (target?.dataset?.ref) {
-            e.preventDefault();
-            e.stopPropagation();
-            this.insertReference(target.dataset.ref);
-          }
-        });
-        body.appendChild(refHint);
-      }
 
       root.appendChild(body);
       this.cellsContainer.appendChild(root);
@@ -871,18 +886,21 @@ class AiNotebookApp {
         }, { changedIds: [cell.id] });
       });
 
-      llmSelect.addEventListener("change", (e) => {
-        const value = e.target.value;
-        this.updateCells((cells) =>
-          cells.map((c) =>
-            c.id === cell.id ? { ...c, modelId: value } : c
-          ),
-          { changedIds: [cell.id] }
-        );
-      });
+      if (llmSelect) {
+        llmSelect.addEventListener("change", (e) => {
+          const value = e.target.value;
+          this.updateCells((cells) =>
+            cells.map((c) =>
+              c.id === cell.id ? { ...c, modelId: value } : c
+            ),
+            { changedIds: [cell.id] }
+          );
+        });
+      }
 
       textarea.addEventListener("input", (e) => {
         const text = e.target.value;
+        this.templateHoverCache.delete(textarea);
         this.updateCells((cells) =>
           cells.map((c) =>
             c.id === cell.id ? { ...c, text, error: "" } : c
@@ -893,6 +911,9 @@ class AiNotebookApp {
       textarea.addEventListener("focus", () => {
         this.lastFocusedEditor = textarea;
       });
+      const handleHoverMove = (e) => this.handleTextareaHover(e, env);
+      textarea.addEventListener("mousemove", handleHoverMove);
+      textarea.addEventListener("mouseleave", () => this.hideVariableTooltip());
 
       upBtn.addEventListener("click", () => {
         this.updateCells((cells) => {
@@ -917,6 +938,8 @@ class AiNotebookApp {
       });
 
       delBtn.addEventListener("click", () => {
+        const ok = confirm("Delete this cell?");
+        if (!ok) return;
         this.updateCells((cells) => cells.filter((c) => c.id !== cell.id));
       });
     });
@@ -1102,10 +1125,21 @@ class AiNotebookApp {
     const controller = new AbortController();
     this.runningControllers.set(cellId, controller);
     this.runningCells.add(cellId);
+    this.runningStartTimes.set(cellId, Date.now());
+    this.startRunningTimerLoop();
     this.renderNotebook();
 
     try {
-      const output = await this.callLLM(model, finalPrompt, controller.signal);
+      const result = await this.callLLM(model, finalPrompt, controller.signal);
+      const output =
+        result && typeof result === "object" && "text" in result
+          ? result.text
+          : result;
+      const usage =
+        result && typeof result === "object" && result.usage
+          ? result.usage
+          : {};
+      const durationMs = Date.now() - this.runningStartTimes.get(cellId);
       // Persist output & clear error
       this.updateCells(
         (cells) =>
@@ -1114,7 +1148,28 @@ class AiNotebookApp {
               ? {
                   ...c,
                   lastOutput: output || "",
-                  error: ""
+                  error: "",
+                  lastRunInfo: {
+                    tokensIn:
+                      usage.prompt ??
+                      usage.input ??
+                      usage.prompt_tokens ??
+                      usage.input_tokens ??
+                      null,
+                    tokensOut:
+                      usage.completion ??
+                      usage.output ??
+                      usage.completion_tokens ??
+                      usage.output_tokens ??
+                      null,
+                    durationMs,
+                    model:
+                      this.getModelLabelById(modelId) ||
+                      model.label ||
+                      model.model ||
+                      model.id ||
+                      ""
+                  }
                 }
               : c
           ),
@@ -1146,6 +1201,10 @@ class AiNotebookApp {
     } finally {
       this.runningControllers.delete(cellId);
       this.runningCells.delete(cellId);
+      this.runningStartTimes.delete(cellId);
+      if (!this.runningCells.size) {
+        this.stopRunningTimerLoop();
+      }
       this.renderNotebook();
     }
   }
@@ -1157,6 +1216,8 @@ class AiNotebookApp {
       this.runningControllers.delete(cellId);
     }
     this.runningCells.delete(cellId);
+    this.runningStartTimes.delete(cellId);
+    if (!this.runningCells.size) this.stopRunningTimerLoop();
     this.renderNotebook();
   }
 
@@ -1187,14 +1248,30 @@ class AiNotebookApp {
     this.runningControllers.forEach((controller) => controller.abort());
     this.runningControllers.clear();
     this.runningCells.clear();
+    this.runningStartTimes.clear();
+    this.stopRunningTimerLoop();
     this.runAllInFlight = false;
     this.renderNotebook();
   }
 
   parseJsonOutput(text) {
     if (typeof text !== "string") return { isJson: false, value: text };
+    let cleaned = text.trim();
+    if (/^```json/i.test(cleaned)) {
+      cleaned = cleaned.replace(/^```json\s*/i, "");
+      if (cleaned.endsWith("```")) {
+        cleaned = cleaned.slice(0, -3);
+      }
+      cleaned = cleaned.trim();
+    }
+    if (
+      (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'"))
+    ) {
+      cleaned = cleaned.slice(1, -1);
+    }
     try {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(cleaned);
       return { isJson: true, value: parsed };
     } catch {
       return { isJson: false, value: text };
@@ -1291,6 +1368,182 @@ class AiNotebookApp {
     return `{\n${inner}\n${pad}}`;
   }
 
+  handleTextareaHover(e, env) {
+    const textarea = e.currentTarget;
+    const value = textarea.value || "";
+    const hoverData = this.getTextareaHoverMirror(textarea, value);
+    const { spans, mirror } = hoverData;
+    if (!spans.length) {
+      this.hideVariableTooltip();
+      return;
+    }
+
+    // Keep mirror aligned with textarea position and scroll
+    const rect = textarea.getBoundingClientRect();
+    mirror.style.left = `${rect.left + window.scrollX}px`;
+    mirror.style.top = `${rect.top + window.scrollY}px`;
+    mirror.scrollTop = textarea.scrollTop;
+    mirror.scrollLeft = textarea.scrollLeft;
+
+    const x = e.clientX + window.scrollX;
+    const y = e.clientY + window.scrollY;
+    let matched = null;
+    for (const span of spans) {
+      const srect = span.getBoundingClientRect();
+      if (x >= srect.left + window.scrollX &&
+          x <= srect.right + window.scrollX &&
+          y >= srect.top + window.scrollY &&
+          y <= srect.bottom + window.scrollY) {
+        matched = span;
+        break;
+      }
+    }
+
+    if (!matched) {
+      this.hideVariableTooltip();
+      return;
+    }
+
+    const expr = matched.dataset.expr;
+    const valueResolved = this.resolveTemplateValue(expr, env);
+    const content = this.formatTooltipValue(valueResolved);
+    this.showVariableTooltip(content, e.clientX, e.clientY);
+  }
+
+  getTextareaHoverMirror(textarea, value) {
+    const cached = this.templateHoverCache.get(textarea);
+    if (cached && cached.value === value) {
+      return cached;
+    }
+    if (cached?.mirror) {
+      cached.mirror.remove();
+    }
+
+    const mirror = document.createElement("div");
+    const cs = getComputedStyle(textarea);
+    const rect = textarea.getBoundingClientRect();
+    mirror.className = "textarea-hover-mirror";
+    mirror.style.position = "absolute";
+    mirror.style.left = `${rect.left + window.scrollX}px`;
+    mirror.style.top = `${rect.top + window.scrollY}px`;
+    mirror.style.width = `${textarea.clientWidth}px`;
+    mirror.style.height = `${textarea.clientHeight}px`;
+    mirror.style.padding = cs.padding;
+    mirror.style.font = cs.font;
+    mirror.style.lineHeight = cs.lineHeight;
+    mirror.style.whiteSpace = "pre-wrap";
+    mirror.style.wordBreak = "break-word";
+    mirror.style.overflow = "hidden";
+    mirror.style.visibility = "hidden";
+    mirror.style.pointerEvents = "none";
+    mirror.style.zIndex = "-1";
+    mirror.innerHTML = this.buildTextareaHoverHtml(value);
+    document.body.appendChild(mirror);
+    mirror.scrollTop = textarea.scrollTop;
+    mirror.scrollLeft = textarea.scrollLeft;
+
+    const spans = Array.from(mirror.querySelectorAll(".template-ref"));
+    const payload = { mirror, spans, value };
+    this.templateHoverCache.set(textarea, payload);
+    return payload;
+  }
+
+  buildTextareaHoverHtml(text) {
+    if (!text) return "";
+    const parts = [];
+    let lastIndex = 0;
+    const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const before = text.slice(lastIndex, match.index);
+      if (before)
+        parts.push(this.escapeHtml(before).replace(/\n/g, "<br>"));
+      const expr = match[1].trim();
+      const escapedExpr = this.escapeHtml(expr);
+      const display = this.escapeHtml(match[0]).replace(/\n/g, "<br>");
+      parts.push(
+        `<span class="template-ref" data-expr="${escapedExpr}">${display}</span>`
+      );
+      lastIndex = regex.lastIndex;
+    }
+    const rest = text.slice(lastIndex);
+    if (rest) parts.push(this.escapeHtml(rest).replace(/\n/g, "<br>"));
+    return parts.join("");
+  }
+
+  formatTooltipValue(val) {
+    if (val === undefined || val === null) return "(empty)";
+    let str = "";
+    if (typeof val === "string") str = val;
+    else if (typeof val === "object") {
+      try {
+        str = JSON.stringify(val);
+      } catch {
+        str = String(val);
+      }
+    } else {
+      str = String(val);
+    }
+    const compact = str.replace(/\s+/g, " ").trim();
+    if (!compact) return "(empty)";
+    return compact.length > 160 ? compact.slice(0, 160) + "…" : compact;
+  }
+
+  showVariableTooltip(content, x, y) {
+    if (!this.varTooltipEl) {
+      const el = document.createElement("div");
+      el.className = "var-tooltip";
+      document.body.appendChild(el);
+      this.varTooltipEl = el;
+    }
+    this.varTooltipEl.textContent = content;
+    this.varTooltipEl.style.display = "block";
+    this.varTooltipEl.style.left = `${x + 12}px`;
+    this.varTooltipEl.style.top = `${y + 12}px`;
+  }
+
+  hideVariableTooltip() {
+    if (this.varTooltipEl) {
+      this.varTooltipEl.style.display = "none";
+    }
+  }
+
+  startRunningTimerLoop() {
+    if (this.runningTimerId) return;
+    this.runningTimerId = setInterval(() => this.updateRunningTimerDom(), 1000);
+  }
+
+  stopRunningTimerLoop() {
+    if (this.runningTimerId) {
+      clearInterval(this.runningTimerId);
+      this.runningTimerId = null;
+    }
+  }
+
+  updateRunningTimerDom() {
+    const now = Date.now();
+    this.runningStartTimes.forEach((start, cellId) => {
+      const el = document.querySelector(
+        `article.cell[data-id="${cellId}"] .cell-status .running-timer`
+      );
+      if (el) {
+        el.textContent = this.formatDuration(now - start);
+      }
+    });
+    if (!this.runningStartTimes.size) {
+      this.stopRunningTimerLoop();
+    }
+  }
+
+  formatDuration(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }
+
   insertReference(ref) {
     const target =
       this.lastFocusedEditor && document.body.contains(this.lastFocusedEditor)
@@ -1360,7 +1613,10 @@ class AiNotebookApp {
       json.choices?.[0]?.message?.content ||
       json.choices?.[0]?.text ||
       "";
-    return String(content).trim();
+    return {
+      text: String(content).trim(),
+      usage: json.usage || {}
+    };
   }
 
   async callClaude(model, prompt, signal) {
@@ -1394,7 +1650,10 @@ class AiNotebookApp {
     const contentArray = json.content || [];
     const firstText = contentArray.find((c) => c.type === "text");
     const content = firstText?.text || "";
-    return String(content).trim();
+    return {
+      text: String(content).trim(),
+      usage: json.usage || {}
+    };
   }
 
   async callOpenRouter(model, prompt, signal) {
@@ -1438,7 +1697,10 @@ class AiNotebookApp {
       json.choices?.[0]?.message?.content ||
       json.choices?.[0]?.text ||
       "";
-    return String(content).trim();
+    return {
+      text: String(content).trim(),
+      usage: json.usage || {}
+    };
   }
 }
 
