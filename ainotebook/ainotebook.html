@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, user-scalable=no"
+  />
+  <meta name="theme-color" content="#ffffff" />
+  <title>AI Notebook</title>
+
+  <!-- LOST framework styles -->
+  <link rel="stylesheet" href="/lost.css" />
+  <!-- App styles -->
+  <link rel="stylesheet" href="app_ainotebook.css" />
+</head>
+<body>
+  <!-- LostUI will inject header/sidebar/footer. This is our main stage. -->
+  <main id="app-stage">
+    <section id="notebook-toolbar" aria-label="Notebook toolbar">
+      <div class="toolbar-left">
+        <label class="notebook-title-label">
+          Notebook title
+          <input
+            id="notebookTitleInput"
+            type="text"
+            placeholder="Untitled notebook"
+          />
+        </label>
+      </div>
+      <div class="toolbar-right">
+        <label class="notebook-model-label">
+          Default LLM
+          <select id="notebookModelSelect">
+            <option value="">None</option>
+          </select>
+        </label>
+
+        <div class="toolbar-divider"></div>
+
+        <div class="toolbar-add-group">
+          <span class="toolbar-add-label">Add cell:</span>
+          <button type="button" id="addMarkdownCellBtn" class="toolbar-btn">
+            Markdown
+          </button>
+          <button type="button" id="addPromptCellBtn" class="toolbar-btn">
+            Prompt
+          </button>
+          <button type="button" id="addVarCellBtn" class="toolbar-btn">
+            Variable
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="cells-container" aria-label="Notebook cells"></section>
+  </main>
+
+  <!-- Settings dialog for LLM configuration -->
+  <dialog id="settingsDialog">
+    <form method="dialog" class="settings-form">
+      <div class="dialog-header">
+        <h2>AI Notebook Settings</h2>
+        <p class="dialog-subtitle">
+          Configure connections to OpenAI, Claude, and OpenRouter.
+        </p>
+      </div>
+      <div class="dialog-body">
+        <section class="settings-section">
+          <h3>LLM Connections</h3>
+          <p class="settings-hint">
+            These settings are stored locally in this browser and are not
+            included in shared URLs.
+          </p>
+          <div id="llmList" class="llm-list"></div>
+          <button
+            type="button"
+            id="addLlmBtn"
+            class="btn btn-secondary"
+            style="margin-top: 8px"
+          >
+            + Add LLM
+          </button>
+        </section>
+
+        <section class="settings-section">
+          <h3>Tips</h3>
+          <ul class="settings-tips">
+            <li>
+              Give each LLM a short label (e.g. <code>GPT-4o</code>,
+              <code>Claude 3.5</code>).
+            </li>
+            <li>
+              Each prompt cell can override the notebook’s default LLM, or you
+              can leave it as “Use notebook default”.
+            </li>
+            <li>
+              In prompts you can reference other cells with
+              <code>{{name}}</code>, <code>{{#1}}</code>, or
+              <code>{{cell_abc}}</code>.
+            </li>
+          </ul>
+        </section>
+      </div>
+      <div class="dialog-footer">
+        <button type="submit" id="settingsCloseBtn" class="btn btn-primary">
+          Save &amp; Close
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- LOST framework modules -->
+  <script type="module" src="/lost.js"></script>
+  <script type="module" src="/lost-ui.js"></script>
+  <!-- App logic -->
+  <script type="module" src="app_ainotebook.js"></script>
+</body>
+</html>
