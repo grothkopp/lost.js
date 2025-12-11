@@ -35,7 +35,9 @@ const DEFAULT_NOTEBOOK = {
 };
 
 const DEFAULT_LLM_SETTINGS = {
-  models: []
+  providers: [],
+  cachedModels: [],
+  cacheTimestamp: 0
 };
 
 /**
@@ -106,6 +108,7 @@ class AiNotebookApp {
 
     this.notebookTitleInput = document.getElementById("notebookTitleInput");
     this.notebookModelSelect = document.getElementById("notebookModelSelect");
+    this.notebookModelSearch = document.getElementById("notebookModelSearch");
 
     this.addMarkdownBtn = document.getElementById("addMarkdownCellBtn");
     this.addPromptBtn = document.getElementById("addPromptCellBtn");
@@ -114,6 +117,8 @@ class AiNotebookApp {
     this.settingsDialog = document.getElementById("settingsDialog");
     this.llmListEl = document.getElementById("llmList");
     this.addLlmBtn = document.getElementById("addLlmBtn");
+    this.refreshModelsBtn = document.getElementById("refreshModelsBtn");
+    this.modelCacheStatus = document.getElementById("modelCacheStatus");
     this.settingsCloseBtn = document.getElementById("settingsCloseBtn");
     this.runAllBtn = document.getElementById("runAllBtn");
     this.stopAllBtn = document.getElementById("stopAllBtn");
@@ -137,6 +142,9 @@ class AiNotebookApp {
     this.templateHoverCache = new WeakMap();
     this.runningStartTimes = new Map(); // cellId -> timestamp
     this.runningTimerId = null;
+    this.modelSearchTermNotebook = "";
+    this.cellModelSearch = new Map(); // cellId -> search term
+    this.refreshModelsInFlight = false;
 
     this.bindEvents();
     this.init();
@@ -174,10 +182,21 @@ class AiNotebookApp {
 
     // Settings dialog
     this.addLlmBtn.addEventListener("click", () => this.addLlmRow());
+    if (this.refreshModelsBtn) {
+      this.refreshModelsBtn.addEventListener("click", () =>
+        this.refreshModelCache()
+      );
+    }
     this.settingsCloseBtn.addEventListener("click", () => {
       this.saveLlmSettingsFromDialog();
       this.settingsDialog.close();
     });
+    if (this.notebookModelSearch) {
+      this.notebookModelSearch.addEventListener("input", (e) => {
+        this.modelSearchTermNotebook = e.target.value;
+        this.renderNotebookModelSelect();
+      });
+    }
   }
 
   // ---------- LOST: validation & update ----------
@@ -199,12 +218,57 @@ class AiNotebookApp {
   loadLlmSettings() {
     try {
       const raw = localStorage.getItem(LLM_SETTINGS_KEY);
-      if (!raw) return { ...DEFAULT_LLM_SETTINGS };
-      const parsed = JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.models)) {
-        return { ...DEFAULT_LLM_SETTINGS };
+      const parsed = raw ? JSON.parse(raw) : {};
+      const providers = Array.isArray(parsed.providers)
+        ? parsed.providers
+        : [];
+      const cachedModels = Array.isArray(parsed.cachedModels)
+        ? parsed.cachedModels
+        : [];
+      const cacheTimestamp =
+        typeof parsed.cacheTimestamp === "number" ? parsed.cacheTimestamp : 0;
+      const normalizedCachedModels = cachedModels.map((m) => {
+        const providersList = Array.isArray(providers) ? providers : [];
+        const provider =
+          providersList.find((p) => p.id === m.providerId) ||
+          providersList.find((p) => p.provider === m.provider);
+        const providerName = provider?.provider || m.provider || "openai";
+        return {
+          ...m,
+          provider: providerName,
+          providerId: m.providerId || provider?.id,
+          apiKey: m.apiKey || provider?.apiKey || "",
+          baseUrl:
+            m.baseUrl ||
+            provider?.baseUrl ||
+            this.getProviderDefaultBaseUrl(providerName)
+        };
+      });
+
+      // Legacy migration: old shape stored models with model/label/baseUrl/apiKey
+      if (!providers.length && Array.isArray(parsed.models)) {
+        const map = new Map();
+        parsed.models.forEach((m) => {
+          if (!m) return;
+          const key = `${m.provider || "openai"}|${m.baseUrl || ""}`;
+          if (!map.has(key)) {
+            map.set(key, {
+              id: genId("provider"),
+              provider: m.provider || "openai",
+              baseUrl: m.baseUrl || "",
+              apiKey: m.apiKey || ""
+            });
+          }
+        });
+        map.forEach((val) => providers.push(val));
       }
-      return parsed;
+
+      return {
+        ...DEFAULT_LLM_SETTINGS,
+        providers,
+        cachedModels: normalizedCachedModels,
+        cacheTimestamp
+      };
     } catch {
       return { ...DEFAULT_LLM_SETTINGS };
     }
@@ -218,6 +282,186 @@ class AiNotebookApp {
     }
   }
 
+  getProviderDefaultBaseUrl(provider) {
+    if (provider === "claude") return "https://api.anthropic.com/v1";
+    if (provider === "openrouter") return "https://openrouter.ai/api/v1";
+    return "https://api.openai.com/v1";
+  }
+
+  getProviderLabel(provider) {
+    if (provider === "claude") return "Claude";
+    if (provider === "openrouter") return "OpenRouter";
+    return "OpenAI";
+  }
+
+  formatModelDisplay(model) {
+    if (!model) return "";
+    const providerName = this.getProviderLabel(model.provider);
+    const modelName = model.model || model.id || "";
+    return `${providerName}/${modelName}`;
+  }
+
+  getModelById(id) {
+    if (!id) return null;
+    return (this.llmSettings.cachedModels || []).find((m) => m.id === id) || null;
+  }
+
+  getModelWithProvider(id) {
+    const model = this.getModelById(id);
+    if (!model) return null;
+    const providers = Array.isArray(this.llmSettings.providers)
+      ? this.llmSettings.providers
+      : [];
+    const provider =
+      providers.find((p) => p.id === model.providerId) ||
+      providers.find((p) => p.provider === model.provider);
+    const providerBase =
+      provider?.baseUrl ||
+      this.getProviderDefaultBaseUrl(provider?.provider || model.provider);
+    return {
+      ...model,
+      provider: provider?.provider || model.provider,
+      apiKey: model.apiKey || provider?.apiKey || "",
+      baseUrl: model.baseUrl || providerBase
+    };
+  }
+
+  getFilteredModels(searchTerm = "") {
+    const term = (searchTerm || "").trim().toLowerCase();
+    const models = Array.isArray(this.llmSettings.cachedModels)
+      ? this.llmSettings.cachedModels
+      : [];
+    if (!term) return models;
+    return models.filter((m) => {
+      const name = this.formatModelDisplay(m).toLowerCase();
+      const raw = `${m.model || ""}`.toLowerCase();
+      return name.includes(term) || raw.includes(term);
+    });
+  }
+
+  setModelCacheStatus(text, type = "info") {
+    if (!this.modelCacheStatus) return;
+    this.modelCacheStatus.textContent = text;
+    this.modelCacheStatus.dataset.type = type;
+  }
+
+  async refreshModelCache() {
+    if (this.refreshModelsInFlight) return;
+    const providers = this.llmSettings.providers || [];
+    if (!providers.length) {
+      this.setModelCacheStatus("Add a provider to fetch models.", "warn");
+      return;
+    }
+
+    this.refreshModelsInFlight = true;
+    this.setModelCacheStatus("Refreshing model list…", "info");
+    const collected = [];
+    let errors = 0;
+
+    for (const provider of providers) {
+      try {
+        const models = await this.fetchModelsForProvider(provider);
+        models.forEach((m) =>
+          collected.push({
+            ...m,
+            id: `${provider.id}:${m.model}`,
+            providerId: provider.id,
+            provider: provider.provider,
+            apiKey: provider.apiKey,
+            baseUrl:
+              provider.baseUrl ||
+              this.getProviderDefaultBaseUrl(provider.provider)
+          })
+        );
+      } catch (err) {
+        console.error("Model fetch failed", provider, err);
+        errors += 1;
+      }
+    }
+
+    this.llmSettings.cachedModels = collected;
+    this.llmSettings.cacheTimestamp = Date.now();
+    this.saveLlmSettings();
+    this.renderNotebook();
+
+    if (errors && collected.length) {
+      this.setModelCacheStatus(
+        `Fetched ${collected.length} models with ${errors} error(s).`,
+        "warn"
+      );
+    } else if (errors && !collected.length) {
+      this.setModelCacheStatus(
+        "Could not refresh models. Check provider settings.",
+        "error"
+      );
+    } else {
+      this.setModelCacheStatus(
+        `Fetched ${collected.length} models just now.`,
+        "success"
+      );
+    }
+
+    this.refreshModelsInFlight = false;
+  }
+
+  async fetchModelsForProvider(provider) {
+    const baseUrl = (provider.baseUrl || this.getProviderDefaultBaseUrl(provider.provider)).replace(
+      /\/+$/,
+      ""
+    );
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (!provider.apiKey) {
+      throw new Error("Missing API key");
+    }
+
+    if (provider.provider === "claude") {
+      headers["x-api-key"] = provider.apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+      const res = await fetch(`${baseUrl}/models`, { headers, method: "GET" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Claude models error ${res.status}: ${text}`);
+      }
+      const json = await res.json();
+      const data = Array.isArray(json.models) ? json.models : [];
+      return data
+        .map((m) => m?.id || m?.name)
+        .filter(Boolean)
+        .map((id) => ({ model: id }));
+    }
+
+    if (provider.provider === "openrouter") {
+      headers["Authorization"] = `Bearer ${provider.apiKey}`;
+      const res = await fetch(`${baseUrl}/models`, { headers, method: "GET" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`OpenRouter models error ${res.status}: ${text}`);
+      }
+      const json = await res.json();
+      const data = Array.isArray(json.data) ? json.data : json.models || [];
+      return data
+        .map((m) => m?.id || m?.model)
+        .filter(Boolean)
+        .map((id) => ({ model: id }));
+    }
+
+    // default openai
+    headers["Authorization"] = `Bearer ${provider.apiKey}`;
+    const res = await fetch(`${baseUrl}/models`, { headers, method: "GET" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`OpenAI models error ${res.status}: ${text}`);
+    }
+    const json = await res.json();
+    const data = Array.isArray(json.data) ? json.data : [];
+    return data
+      .map((m) => m?.id)
+      .filter(Boolean)
+      .map((id) => ({ model: id }));
+  }
+
   openSettingsDialog() {
     this.renderLlmSettingsDialog();
     this.settingsDialog.showModal();
@@ -225,50 +469,35 @@ class AiNotebookApp {
 
   renderLlmSettingsDialog() {
     this.llmListEl.innerHTML = "";
-    const models = this.llmSettings.models;
+    const providers = this.llmSettings.providers;
 
-    if (!models.length) {
+    if (!providers.length) {
       // Add one empty row to start with
-      models.push({
-        id: genId("model"),
-        label: "",
+      providers.push({
+        id: genId("provider"),
         provider: "openai",
-        model: "",
-        baseUrl: "",
+        baseUrl: this.getProviderDefaultBaseUrl("openai"),
         apiKey: ""
       });
     }
 
-    for (const model of models) {
+    for (const provider of providers) {
       const row = document.createElement("div");
       row.className = "llm-row";
-      row.dataset.id = model.id;
+      row.dataset.id = provider.id;
 
-      // Label
-      const labelField = document.createElement("div");
-      labelField.className = "llm-field";
-      labelField.innerHTML =
-        '<span>Label</span><input type="text" class="llm-label-input" />';
-      labelField.querySelector("input").value = model.label || "";
-      row.appendChild(labelField);
-
-      // Provider + model
+      // Provider
       const providerField = document.createElement("div");
       providerField.className = "llm-field";
       providerField.innerHTML =
-        '<span>Provider &amp; Model</span>' +
-        '<div style="display:flex; gap:6px;">' +
+        '<span>Provider</span>' +
         '<select class="llm-provider-select">' +
         '<option value="openai">OpenAI</option>' +
         '<option value="claude">Claude</option>' +
         '<option value="openrouter">OpenRouter</option>' +
-        "</select>" +
-        '<input type="text" class="llm-model-input" placeholder="model id" />' +
-        "</div>";
+        "</select>";
       const providerSelect = providerField.querySelector("select");
-      const modelInput = providerField.querySelector("input");
-      providerSelect.value = model.provider || "openai";
-      modelInput.value = model.model || "";
+      providerSelect.value = provider.provider || "openai";
       row.appendChild(providerField);
 
       // Base URL + key
@@ -280,8 +509,11 @@ class AiNotebookApp {
         '<input type="text" class="llm-baseurl-input" placeholder="(optional) base URL" />' +
         '<input type="password" class="llm-apikey-input" placeholder="API key" />' +
         "</div>";
-      connField.querySelector(".llm-baseurl-input").value = model.baseUrl || "";
-      connField.querySelector(".llm-apikey-input").value = model.apiKey || "";
+      const baseInput = connField.querySelector(".llm-baseurl-input");
+      baseInput.value =
+        provider.baseUrl ||
+        this.getProviderDefaultBaseUrl(provider.provider || "openai");
+      connField.querySelector(".llm-apikey-input").value = provider.apiKey || "";
       row.appendChild(connField);
 
       // Actions
@@ -293,26 +525,19 @@ class AiNotebookApp {
 
       // Provider change default base URL
       providerSelect.addEventListener("change", () => {
-        const baseInput = connField.querySelector(".llm-baseurl-input");
         if (baseInput.value.trim()) return;
-        if (providerSelect.value === "openai") {
-          baseInput.value = "https://api.openai.com/v1";
-        } else if (providerSelect.value === "claude") {
-          baseInput.value = "https://api.anthropic.com/v1";
-        } else if (providerSelect.value === "openrouter") {
-          baseInput.value = "https://openrouter.ai/api/v1";
-        }
+        baseInput.value = this.getProviderDefaultBaseUrl(providerSelect.value);
       });
 
       // Delete button
       actions
         .querySelector(".llm-delete-btn")
         .addEventListener("click", () => {
-          const idx = this.llmSettings.models.findIndex(
-            (m) => m.id === model.id
+          const idx = this.llmSettings.providers.findIndex(
+            (m) => m.id === provider.id
           );
           if (idx >= 0) {
-            this.llmSettings.models.splice(idx, 1);
+            this.llmSettings.providers.splice(idx, 1);
             this.renderLlmSettingsDialog();
           }
         });
@@ -322,11 +547,9 @@ class AiNotebookApp {
   }
 
   addLlmRow() {
-    this.llmSettings.models.push({
-      id: genId("model"),
-      label: "",
+    this.llmSettings.providers.push({
+      id: genId("provider"),
       provider: "openai",
-      model: "",
       baseUrl: "",
       apiKey: ""
     });
@@ -335,36 +558,35 @@ class AiNotebookApp {
 
   saveLlmSettingsFromDialog() {
     const rows = Array.from(this.llmListEl.querySelectorAll(".llm-row"));
-    const models = [];
+    const providers = [];
 
     for (const row of rows) {
-      const id = row.dataset.id || genId("model");
-      const label = row.querySelector(".llm-label-input")?.value?.trim() || "";
+      const id = row.dataset.id || genId("provider");
       const provider =
         row.querySelector(".llm-provider-select")?.value || "openai";
-      const modelId =
-        row.querySelector(".llm-model-input")?.value?.trim() || "";
       const baseUrl =
         row.querySelector(".llm-baseurl-input")?.value?.trim() || "";
       const apiKey =
         row.querySelector(".llm-apikey-input")?.value?.trim() || "";
 
-      if (!label && !modelId && !apiKey) {
+      if (!apiKey && !baseUrl) {
         // completely empty row, skip
         continue;
       }
 
-      models.push({
+      providers.push({
         id,
-        label,
         provider,
-        model: modelId,
         baseUrl,
         apiKey
       });
     }
 
-    this.llmSettings.models = models;
+    this.llmSettings.providers = providers;
+    // Drop cached models that no longer have a provider backing them
+    this.llmSettings.cachedModels = (this.llmSettings.cachedModels || []).filter(
+      (m) => providers.some((p) => p.id === m.providerId)
+    );
     this.saveLlmSettings();
     this.renderNotebook(); // refresh model selects
   }
@@ -602,7 +824,7 @@ class AiNotebookApp {
   }
 
   renderNotebookModelSelect() {
-    const models = this.llmSettings.models;
+    const models = this.getFilteredModels(this.modelSearchTermNotebook);
     const selected = this.currentNotebook?.notebookModelId || "";
 
     // Preserve selection while rebuilding options
@@ -615,7 +837,7 @@ class AiNotebookApp {
     for (const m of models) {
       const opt = document.createElement("option");
       opt.value = m.id;
-      opt.textContent = m.label || `${m.provider}:${m.model}`;
+      opt.textContent = this.formatModelDisplay(m);
       this.notebookModelSelect.appendChild(opt);
     }
 
@@ -683,10 +905,14 @@ class AiNotebookApp {
           : "Use notebook default";
         llmSelect.appendChild(useDefaultOpt);
 
-        for (const m of this.llmSettings.models) {
+        const models =
+          Array.isArray(this.llmSettings.cachedModels) && this.llmSettings.cachedModels.length
+            ? this.llmSettings.cachedModels
+            : [];
+        for (const m of models) {
           const opt = document.createElement("option");
           opt.value = m.id;
-          opt.textContent = m.label || `${m.provider}:${m.model}`;
+          opt.textContent = this.formatModelDisplay(m);
           llmSelect.appendChild(opt);
         }
         llmSelect.value = cell.modelId || "";
@@ -958,9 +1184,9 @@ class AiNotebookApp {
 
   getModelLabelById(id) {
     if (!id) return "";
-    const m = this.llmSettings.models.find((m) => m.id === id);
+    const m = (this.llmSettings.cachedModels || []).find((m) => m.id === id);
     if (!m) return "";
-    return m.label || `${m.provider}:${m.model}`;
+    return this.formatModelDisplay(m);
   }
 
   // ---------- Focus preservation ----------
@@ -1155,7 +1381,7 @@ class AiNotebookApp {
       return;
     }
 
-    const model = this.llmSettings.models.find((m) => m.id === modelId);
+    const model = this.getModelWithProvider(modelId);
     if (!model || !model.apiKey || !model.model) {
       alert(
         "The selected LLM is not fully configured. Please add API key and model id."

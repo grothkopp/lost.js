@@ -31,6 +31,12 @@
       <div class="toolbar-right">
         <label class="notebook-model-label">
           Default LLM
+          <input
+            id="notebookModelSearch"
+            type="search"
+            placeholder="Search models"
+            class="model-search-input"
+          />
           <select id="notebookModelSelect">
             <option value="">None</option>
           </select>
@@ -102,8 +108,20 @@
             class="btn btn-secondary"
             style="margin-top: 8px"
           >
-            + Add LLM
+            + Add provider
           </button>
+          <div class="model-cache">
+            <div class="model-cache-header">
+              <h4>Available models</h4>
+              <button type="button" id="refreshModelsBtn" class="btn btn-secondary">
+                Refresh list
+              </button>
+            </div>
+            <p class="settings-hint">
+              Fetched from your configured providers and cached locally.
+            </p>
+            <div id="modelCacheStatus" class="model-cache-status"></div>
+          </div>
         </section>
 
         <section class="settings-section">
