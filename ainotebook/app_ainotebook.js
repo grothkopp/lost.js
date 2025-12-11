@@ -735,7 +735,7 @@ class AiNotebookApp {
   buildReferenceIndex(cells) {
     const map = new Map(); // baseKey -> Set(cellId)
     (Array.isArray(cells) ? cells : []).forEach((cell) => {
-      if (cell.type !== "prompt" && cell.type !== "markdown") return;
+      if (cell.type !== "prompt" && cell.type !== "markdown" && cell.type !== "variable") return;
       const refs = this.parseReferencesFromText(cell.text || "");
       refs.forEach((ref) => {
         if (!map.has(ref)) map.set(ref, new Set());
@@ -776,54 +776,81 @@ class AiNotebookApp {
     const refPrev = this.buildReferenceIndex(prevList);
     const refNew = this.buildReferenceIndex(next);
 
-    const queue = [];
-    const seenKeys = new Set();
-
-    const enqueueKeys = (cellId) => {
-      this.collectCellKeys(prevList, next, cellId).forEach((k) => {
-        if (!seenKeys.has(k)) {
-          seenKeys.add(k);
-          queue.push(k);
-        }
-      });
-    };
-
-    // Initialize staleness on changed cells
-    changedIds.forEach((id) => {
-      const cell = next.find((c) => c.id === id);
-      if (cell) {
-        if (reason === "output") {
-          cell.stale = false;
-        } else {
-          cell.stale = true;
-        }
-      }
-      enqueueKeys(id);
+    // Reset stale flags; we'll recompute.
+    next.forEach((c) => {
+      c.stale = false;
     });
 
-    // Propagate staleness to dependents recursively
-    const markCellStale = (cellId) => {
-      const cell = next.find((c) => c.id === cellId);
-      if (cell && !cell.stale) {
-        cell.stale = true;
-        enqueueKeys(cellId);
-      }
+    const staleSeeds = new Set();
+    const queue = [];
+    const seen = new Set();
+
+    const pushQueue = (id, causeStale) => {
+      const sig = `${id}::${causeStale ? 1 : 0}`;
+      if (seen.has(sig)) return;
+      seen.add(sig);
+      queue.push({ id, causeStale });
     };
 
+    // Prompts edited (non-output) become stale sources; output refresh clears staleness
+    changedIds.forEach((id) => {
+      const cell = next.find((c) => c.id === id);
+      if (!cell) return;
+      if (reason === "output") {
+        cell.stale = false;
+        pushQueue(id, false); // refreshed, do not stale downstream
+      } else if (cell.type === "prompt") {
+        cell.stale = true;
+        staleSeeds.add(cell.id);
+        pushQueue(id, true);
+      } else {
+        // markdown/variable edits themselves are fresh, but their dependents should become stale
+        pushQueue(id, true);
+      }
+    });
+
+    // Persisted stale prompts (not refreshed this cycle) remain stale sources
+    prevList.forEach((cell) => {
+      if (
+        cell.stale &&
+        cell.type === "prompt" &&
+        !(reason === "output" && changedIds.has(cell.id))
+      ) {
+        const cur = next.find((c) => c.id === cell.id);
+        if (cur) {
+          cur.stale = true;
+          staleSeeds.add(cur.id);
+          pushQueue(cur.id, true);
+        }
+      }
+    });
+
+    const staleClosure = new Set(staleSeeds);
+
+    // Propagate staleness
     while (queue.length) {
-      const key = queue.shift();
-      const refSet = new Set([
-        ...(refPrev.get(key) || []),
-        ...(refNew.get(key) || [])
-      ]);
-      refSet.forEach((cellId) => {
-        // Avoid marking the cell that just produced fresh output as stale
-        if (reason === "output" && changedIds.has(cellId)) return;
-        markCellStale(cellId);
+      const { id, causeStale } = queue.shift();
+      if (!causeStale) continue;
+      const keys = this.collectCellKeys(prevList, next, id);
+      keys.forEach((k) => {
+        const refSet = new Set([
+          ...(refPrev.get(k) || []),
+          ...(refNew.get(k) || [])
+        ]);
+        refSet.forEach((dependentId) => {
+          if (!staleClosure.has(dependentId)) {
+            staleClosure.add(dependentId);
+            pushQueue(dependentId, true);
+          }
+        });
       });
     }
 
-    return next;
+    // Apply final staleness state
+    return next.map((c) => ({
+      ...c,
+      stale: staleClosure.has(c.id)
+    }));
   }
 
   // ---------- Rendering ----------
@@ -1024,10 +1051,10 @@ class AiNotebookApp {
       } else if (cell.error) {
         statusSpan.classList.add("error");
         statusSpan.textContent = "Error";
-      } else if (cell.type === "prompt" && cell.stale) {
+      } else if (cell.stale) {
         statusSpan.classList.add("stale");
         statusSpan.textContent = "Stale";
-      } else if (cell.type === "prompt" && cell.lastOutput) {
+      } else if (cell.lastOutput && cell.type === "prompt") {
         statusSpan.textContent = "Done";
       } else {
         statusSpan.textContent = "";
@@ -1152,7 +1179,7 @@ class AiNotebookApp {
         });
         output.appendChild(insertBtn);
       }
-      if (cell.stale && cell.type === "prompt") {
+      if (cell.stale) {
         output.classList.add("stale");
       }
       if (cell.type === "prompt" && cell.lastRunInfo) {
