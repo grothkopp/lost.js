@@ -130,7 +130,7 @@ class AiNotebookApp {
     this.notebookModelSelect = document.getElementById("notebookModelSelect");
     this.notebookModelSearch = document.getElementById("notebookModelSearch");
     this.notebookModelLabel =
-      this.notebookModelSelect?.closest(".notebook-model-label") || null;
+      this.notebookModelSelect?.closest(".notebook-toolbar-label") || null;
     if (this.notebookModelSelect) this.notebookModelSelect.style.display = "none";
     if (this.notebookModelSearch) this.notebookModelSearch.style.display = "none";
 
@@ -1303,7 +1303,8 @@ class AiNotebookApp {
         const runBtn = document.createElement("button");
         runBtn.type = "button";
         runBtn.className = "cell-action-btn run-btn";
-        runBtn.textContent = "▶";
+        runBtn.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class=""><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 4v16a1 1 0 0 0 1.524 .852l13 -8a1 1 0 0 0 0 -1.704l-13 -8a1 1 0 0 0 -1.524 .852z" /></svg>';
         const isStale = !!cell._stale || !cell.lastOutput;
         runBtn.disabled = isRunning;
         runBtn.classList.toggle("is-stale", isStale && !isRunning);
@@ -1313,7 +1314,7 @@ class AiNotebookApp {
         const stopBtn = document.createElement("button");
         stopBtn.type = "button";
         stopBtn.className = "cell-action-btn stop-btn";
-        stopBtn.textContent = "■";
+        stopBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class=""><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 4h-10a3 3 0 0 0 -3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3 -3v-10a3 3 0 0 0 -3 -3z" /></svg>';
         stopBtn.disabled = !isRunning;
         stopBtn.classList.toggle("is-running", isRunning);
         actions.appendChild(stopBtn);
@@ -1364,6 +1365,11 @@ class AiNotebookApp {
             ? cell.systemPrompt
             : DEFAULT_SYSTEM_PROMPT;
         body.appendChild(systemTextarea);
+
+        const userLabel = document.createElement("div");
+        userLabel.className = "cell-subtitle";
+        userLabel.textContent = "User prompt";
+        body.appendChild(userLabel);
       }
 
       const textarea = document.createElement("textarea");

@@ -71,7 +71,7 @@
   font-size: 14px;
 }
 
-.notebook-model-label {
+.notebook-toolbar-label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -79,7 +79,7 @@
   color: var(--nb-muted);
 }
 
-.notebook-model-label select {
+.notebook-tool-label select {
   min-width: 180px;
   padding: 8px 10px;
   border-radius: 8px;
