@@ -297,7 +297,7 @@ class AiNotebookApp {
   formatModelDisplay(model) {
     if (!model) return "";
     const providerName = this.getProviderLabel(model.provider);
-    const modelName = model.model || model.id || "";
+    const modelName = model.displayName || model.model || model.id || "";
     return `${providerName}/${modelName}`;
   }
 
@@ -346,6 +346,15 @@ class AiNotebookApp {
   }
 
   async refreshModelCache() {
+    // If settings dialog is open, read latest provider edits before fetching
+    if (this.settingsDialog?.open) {
+      const providersFromDialog = this.collectProvidersFromDialog();
+      if (providersFromDialog) {
+        this.llmSettings.providers = providersFromDialog;
+        this.saveLlmSettings();
+      }
+    }
+
     if (this.refreshModelsInFlight) return;
     const providers = this.llmSettings.providers || [];
     if (!providers.length) {
@@ -419,17 +428,25 @@ class AiNotebookApp {
     if (provider.provider === "claude") {
       headers["x-api-key"] = provider.apiKey;
       headers["anthropic-version"] = "2023-06-01";
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
       const res = await fetch(`${baseUrl}/models`, { headers, method: "GET" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`Claude models error ${res.status}: ${text}`);
       }
       const json = await res.json();
-      const data = Array.isArray(json.models) ? json.models : [];
+      const data = Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.models)
+        ? json.models
+        : [];
       return data
-        .map((m) => m?.id || m?.name)
-        .filter(Boolean)
-        .map((id) => ({ model: id }));
+        .map((m) => ({
+          model: m?.id || m?.name,
+          displayName: m?.display_name || m?.id || m?.name,
+          createdAt: m?.created_at
+        }))
+        .filter((m) => !!m.model);
     }
 
     if (provider.provider === "openrouter") {
@@ -557,6 +574,18 @@ class AiNotebookApp {
   }
 
   saveLlmSettingsFromDialog() {
+    const providers = this.collectProvidersFromDialog();
+    this.llmSettings.providers = providers;
+    // Drop cached models that no longer have a provider backing them
+    this.llmSettings.cachedModels = (this.llmSettings.cachedModels || []).filter(
+      (m) => providers.some((p) => p.id === m.providerId)
+    );
+    this.saveLlmSettings();
+    this.renderNotebook(); // refresh model selects
+  }
+
+  collectProvidersFromDialog() {
+    if (!this.llmListEl) return [];
     const rows = Array.from(this.llmListEl.querySelectorAll(".llm-row"));
     const providers = [];
 
@@ -582,13 +611,7 @@ class AiNotebookApp {
       });
     }
 
-    this.llmSettings.providers = providers;
-    // Drop cached models that no longer have a provider backing them
-    this.llmSettings.cachedModels = (this.llmSettings.cachedModels || []).filter(
-      (m) => providers.some((p) => p.id === m.providerId)
-    );
-    this.saveLlmSettings();
-    this.renderNotebook(); // refresh model selects
+    return providers;
   }
 
   // ---------- Notebook operations ----------
@@ -1903,7 +1926,8 @@ class AiNotebookApp {
       headers: {
         "Content-Type": "application/json",
         "x-api-key": model.apiKey,
-        "anthropic-version": "2023-06-01"
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
       },
       body: JSON.stringify({
         model: model.model,
