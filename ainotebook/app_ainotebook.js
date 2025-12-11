@@ -1242,7 +1242,7 @@ class AiNotebookApp {
       if (cell._stale) {
         output.classList.add("stale");
       }
-      if (cell.type === "prompt") {
+      if (true) {
         const toggleBtn = document.createElement("button");
         toggleBtn.type = "button";
         toggleBtn.className = "output-expand-btn";
