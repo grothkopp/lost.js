@@ -111,18 +111,14 @@ class AiNotebookApp {
         label: "Share this notebook:"
       }
     });
+    this.setupHeaderTitleEditing();
 
     // ---------- DOM references ----------
     this.stageEl = document.getElementById("app-stage");
     this.cellsContainer = document.getElementById("cells-container");
 
-    this.notebookTitleInput = document.getElementById("notebookTitleInput");
     this.notebookModelSelect = document.getElementById("notebookModelSelect");
     this.notebookModelSearch = document.getElementById("notebookModelSearch");
-
-    this.addMarkdownBtn = document.getElementById("addMarkdownCellBtn");
-    this.addPromptBtn = document.getElementById("addPromptCellBtn");
-    this.addVarBtn = document.getElementById("addVarCellBtn");
 
     this.settingsDialog = document.getElementById("settingsDialog");
     this.llmListEl = document.getElementById("llmList");
@@ -169,6 +165,51 @@ class AiNotebookApp {
     this.init();
   }
 
+  setupHeaderTitleEditing() {
+    const titleEl = this.uiShell?.elements?.title;
+    if (!titleEl) return;
+
+    const makeEditable = () => {
+      titleEl.contentEditable = "true";
+      titleEl.dataset.editing = "true";
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      titleEl.focus();
+    };
+
+    const commitTitle = () => {
+      titleEl.contentEditable = "false";
+      titleEl.dataset.editing = "";
+      const text = titleEl.textContent || "";
+      const item = this.lost.getCurrent();
+      if (!item) return;
+      if (text !== item.title) {
+        this.lost.update(item.id, { title: text });
+      }
+    };
+
+    titleEl.addEventListener("click", () => {
+      if (titleEl.dataset.editing === "true") return;
+      makeEditable();
+    });
+    titleEl.addEventListener("blur", commitTitle);
+    titleEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitTitle();
+        titleEl.blur();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        titleEl.textContent = this.currentNotebook?.title || "";
+        titleEl.blur();
+      }
+    });
+  }
+
   // ---------- Initialization ----------
 
   async init() {
@@ -178,14 +219,6 @@ class AiNotebookApp {
 
   bindEvents() {
     // Toolbar
-    if (this.notebookTitleInput) {
-      this.notebookTitleInput.addEventListener("input", (e) => {
-        const item = this.lost.getCurrent();
-        if (!item) return;
-        this.lost.update(item.id, { title: e.target.value });
-      });
-    }
-
     if (this.notebookModelSelect) {
       this.notebookModelSelect.addEventListener("change", (e) => {
         const item = this.lost.getCurrent();
@@ -193,12 +226,6 @@ class AiNotebookApp {
         this.lost.update(item.id, { notebookModelId: e.target.value });
       });
     }
-
-    this.addMarkdownBtn?.addEventListener("click", () =>
-      this.addCell("markdown")
-    );
-    this.addPromptBtn?.addEventListener("click", () => this.addCell("prompt"));
-    this.addVarBtn?.addEventListener("click", () => this.addCell("variable"));
 
     this.runAllBtn?.addEventListener("click", () => this.runAllPromptCells());
     this.stopAllBtn?.addEventListener("click", () => this.stopAllCells());
@@ -704,6 +731,37 @@ class AiNotebookApp {
     this.lost.update(item.id, { cells });
   }
 
+  addCellAt(type, index) {
+    const item = this.lost.getCurrent();
+    if (!item) return;
+    const cells = Array.isArray(item.cells) ? [...item.cells] : [];
+    const insertIndex = Math.max(0, Math.min(index + 1, cells.length));
+    const nextNumber = cells.length + 1;
+    let name = "";
+    if (type === "markdown") name = `md_${nextNumber}`;
+    if (type === "prompt") name = `cell_${nextNumber}`;
+    if (type === "variable") name = `var_${nextNumber}`;
+    const cell = {
+      id: genId("cell"),
+      type,
+      name,
+      text:
+        type === "markdown"
+          ? `# Cell ${nextNumber}\n`
+          : type === "variable"
+          ? ""
+          : `Explain {{md_${Math.max(1, insertIndex)} || notes}}`,
+      systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
+      _outputExpanded: false,
+      modelId: "",
+      lastOutput: "",
+      error: "",
+      _stale: false
+    };
+    cells.splice(insertIndex, 0, cell);
+    this.lost.update(item.id, { cells });
+  }
+
   updateCells(transformFn, options = {}) {
     const item = this.lost.getCurrent();
     if (!item) return;
@@ -914,12 +972,11 @@ class AiNotebookApp {
     this.stopAllBtn.classList.toggle("is-running", anyRunning);
 
     // Toolbar
-    if (document.activeElement !== this.notebookTitleInput) {
-      this.notebookTitleInput.value = item.title || "";
-    }
-
     this.renderNotebookModelSelect();
     this.renderCells();
+    if (this.uiShell?.setTitle) {
+      this.uiShell.setTitle(item.title || "Untitled notebook");
+    }
 
     this.restoreFocusState(focusState);
   }
@@ -1323,6 +1380,35 @@ class AiNotebookApp {
 
       root.appendChild(body);
       this.cellsContainer.appendChild(root);
+
+      // ----- Inline add-cell pills -----
+      const addRow = document.createElement("div");
+      addRow.className = "cell-add-row";
+      const addLabel = document.createElement("span");
+      addLabel.className = "cell-add-label";
+      addLabel.textContent = "";
+      const addPillContainer = document.createElement("div");
+      addPillContainer.className = "cell-add-pills";
+      const types = [
+        { type: "markdown", label: "+ markdown", cls: "type-markdown" },
+        { type: "prompt", label: "+ prompt", cls: "type-prompt" },
+        { type: "variable", label: "+ variable", cls: "type-variable" }
+      ];
+      types.forEach((t) => {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = `cell-add-pill ${t.cls}`;
+        pill.textContent = t.label;
+        pill.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.addCellAt(t.type, index);
+        });
+        addPillContainer.appendChild(pill);
+      });
+      addRow.appendChild(addLabel);
+      addRow.appendChild(addPillContainer);
+      this.cellsContainer.appendChild(addRow);
 
       if (systemTextarea) {
         this.applyTextareaHeight(systemTextarea, "collapsed");

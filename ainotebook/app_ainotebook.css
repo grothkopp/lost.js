@@ -126,8 +126,52 @@
 #cells-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding-bottom: 180px; /* ensure last cell clears footer */
+}
+
+.cell-add-row {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+.cell-add-pills {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #999;
+}
+
+.cell-add-pill {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #475569;
+  background: rgba(128, 128, 128, 0.12);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.cell-add-pill:hover {
+  transform: translateY(-1px);
+}
+
+.cell-add-pill.type-markdown:hover {
+  background: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+}
+
+.cell-add-pill.type-prompt:hover {
+  background: rgba(22, 163, 74, 0.18);
+  color: #15803d;
+}
+
+.cell-add-pill.type-variable:hover {
+  background: rgba(217, 119, 6, 0.2);
+  color: #b45309;
 }
 
 .cell {

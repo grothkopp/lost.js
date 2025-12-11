@@ -18,16 +18,7 @@
   <!-- LostUI will inject header/sidebar/footer. This is our main stage. -->
   <main id="app-stage">
     <section id="notebook-toolbar" aria-label="Notebook toolbar">
-      <div class="toolbar-left">
-        <label class="notebook-title-label">
-          Notebook title
-          <input
-            id="notebookTitleInput"
-            type="text"
-            placeholder="Untitled notebook"
-          />
-        </label>
-      </div>
+      <div class="toolbar-left"></div>
       <div class="toolbar-right">
         <label class="notebook-model-label">
           Default LLM
@@ -41,21 +32,6 @@
             <option value="">None</option>
           </select>
         </label>
-
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-add-group">
-          <span class="toolbar-add-label">Add cell:</span>
-          <button type="button" id="addMarkdownCellBtn" class="toolbar-btn">
-            Markdown
-          </button>
-          <button type="button" id="addPromptCellBtn" class="toolbar-btn">
-            Prompt
-          </button>
-          <button type="button" id="addVarCellBtn" class="toolbar-btn">
-            Variable
-          </button>
-        </div>
 
         <div class="toolbar-divider"></div>
 
