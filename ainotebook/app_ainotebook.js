@@ -129,6 +129,10 @@ class AiNotebookApp {
 
     this.notebookModelSelect = document.getElementById("notebookModelSelect");
     this.notebookModelSearch = document.getElementById("notebookModelSearch");
+    this.notebookModelLabel =
+      this.notebookModelSelect?.closest(".notebook-model-label") || null;
+    if (this.notebookModelSelect) this.notebookModelSelect.style.display = "none";
+    if (this.notebookModelSearch) this.notebookModelSearch.style.display = "none";
 
     this.settingsDialog = document.getElementById("settingsDialog");
     this.llmListEl = document.getElementById("llmList");
@@ -992,24 +996,144 @@ class AiNotebookApp {
   }
 
   renderNotebookModelSelect() {
-    const models = this.getFilteredModels(this.modelSearchTermNotebook);
-    const selected = this.currentNotebook?.notebookModelId || "";
+    const container = this.notebookModelLabel;
+    if (!container) return;
+    container.innerHTML = "";
 
-    // Preserve selection while rebuilding options
-    this.notebookModelSelect.innerHTML = "";
-    const noneOpt = document.createElement("option");
-    noneOpt.value = "";
-    noneOpt.textContent = "None";
-    this.notebookModelSelect.appendChild(noneOpt);
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = "Default LLM";
+    labelSpan.className = "notebook-model-heading";
+    container.appendChild(labelSpan);
 
-    for (const m of models) {
-      const opt = document.createElement("option");
-      opt.value = m.id;
-      opt.textContent = this.formatModelDisplay(m);
-      this.notebookModelSelect.appendChild(opt);
-    }
+    const picker = this.createModelPicker({
+      selectedId: this.currentNotebook?.notebookModelId || "",
+      searchTerm: this.modelSearchTermNotebook || "",
+      placeholder: "Search models",
+      defaultLabel: "None",
+      defaultValue: "",
+      onSearchChange: (term) => {
+        this.modelSearchTermNotebook = term;
+      },
+      onSelect: (id) => {
+        const item = this.currentNotebook;
+        if (!item) return;
+        this.lost.update(item.id, { notebookModelId: id });
+      }
+    });
+    container.appendChild(picker);
+  }
 
-    this.notebookModelSelect.value = selected;
+  createModelPicker(config) {
+    const {
+      selectedId = "",
+      searchTerm = "",
+      placeholder = "Search",
+      defaultLabel = null,
+      defaultValue = ""
+    } = config || {};
+
+    let currentId = selectedId;
+    let currentSearch = searchTerm;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "model-picker";
+
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "cell-add-pill model-picker-pill";
+    const panel = document.createElement("div");
+    panel.className = "model-picker-panel";
+    panel.style.display = "none";
+
+    const input = document.createElement("input");
+    input.type = "search";
+    input.className = "model-picker-search";
+    input.placeholder = placeholder;
+    input.value = currentSearch;
+
+    const list = document.createElement("div");
+    list.className = "model-picker-list";
+
+    const getLabel = (id) => {
+      if (!id && defaultLabel !== null) return defaultLabel;
+      return this.getModelLabelById(id) || id || defaultLabel || "Select model";
+    };
+
+    const renderList = () => {
+      list.innerHTML = "";
+      const models =
+        Array.isArray(this.llmSettings.cachedModels) &&
+        this.llmSettings.cachedModels.length
+          ? this.llmSettings.cachedModels
+          : [];
+      const term = (currentSearch || "").toLowerCase();
+      const filtered = models.filter((m) => {
+        const label = this.formatModelDisplay(m).toLowerCase();
+        return label.includes(term);
+      });
+
+      const addEntry = (id, label) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "model-picker-item";
+        btn.textContent = label;
+        if (id === currentId) btn.classList.add("selected");
+        btn.addEventListener("click", () => {
+          currentId = id;
+          pill.textContent = getLabel(currentId);
+          if (typeof config.onSelect === "function") {
+            config.onSelect(id);
+          }
+          panel.style.display = "none";
+        });
+        list.appendChild(btn);
+      };
+
+      if (defaultLabel !== null) {
+        addEntry(defaultValue, defaultLabel);
+      }
+      filtered.forEach((m) => addEntry(m.id, this.formatModelDisplay(m)));
+      pill.textContent = getLabel(currentId);
+    };
+
+    const openPanel = () => {
+      panel.style.display = "block";
+      input.focus();
+      renderList();
+      document.addEventListener("click", handleOutside, { once: true });
+    };
+    const closePanel = () => {
+      panel.style.display = "none";
+    };
+    const handleOutside = (e) => {
+      if (!wrapper.contains(e.target)) {
+        closePanel();
+      }
+    };
+
+    pill.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const willOpen = panel.style.display === "none";
+      if (willOpen) openPanel();
+      else closePanel();
+    });
+
+    input.addEventListener("input", (e) => {
+      currentSearch = e.target.value;
+      if (typeof config.onSearchChange === "function") {
+        config.onSearchChange(currentSearch);
+      }
+      renderList();
+    });
+
+    panel.appendChild(input);
+    panel.appendChild(list);
+    wrapper.appendChild(pill);
+    wrapper.appendChild(panel);
+    renderList();
+
+    return wrapper;
   }
 
   renderCells() {
@@ -1118,29 +1242,28 @@ class AiNotebookApp {
 
       let llmSelect = null;
       if (cell.type === "prompt") {
-        llmSelect = document.createElement("select");
-        llmSelect.className = "cell-llm-select";
-        const useDefaultOpt = document.createElement("option");
-        const nbModel = this.currentNotebook?.notebookModelId || "";
-        const nbModelLabel = this.getModelLabelById(nbModel);
-        useDefaultOpt.value = "";
-        useDefaultOpt.textContent = nbModel
-          ? `Use notebook default (${nbModelLabel})`
-          : "Use notebook default";
-        llmSelect.appendChild(useDefaultOpt);
-
-        const models =
-          Array.isArray(this.llmSettings.cachedModels) && this.llmSettings.cachedModels.length
-            ? this.llmSettings.cachedModels
-            : [];
-        for (const m of models) {
-          const opt = document.createElement("option");
-          opt.value = m.id;
-          opt.textContent = this.formatModelDisplay(m);
-          llmSelect.appendChild(opt);
-        }
-        llmSelect.value = cell.modelId || "";
-        header.appendChild(llmSelect);
+        const searchTerm = this.cellModelSearch.get(cell.id) || "";
+        const picker = this.createModelPicker({
+          selectedId: cell.modelId || "",
+          searchTerm,
+          placeholder: "Search models",
+          defaultLabel: "Use notebook default",
+          defaultValue: "",
+          onSearchChange: (term) => {
+            this.cellModelSearch.set(cell.id, term);
+          },
+          onSelect: (id) => {
+            this.updateCells(
+              (cells) =>
+                cells.map((c) =>
+                  c.id === cell.id ? { ...c, modelId: id } : c
+                ),
+              { changedIds: [cell.id] }
+            );
+          }
+        });
+        llmSelect = picker;
+        header.appendChild(picker);
       }
 
       const statusSpan = document.createElement("span");
@@ -1441,18 +1564,6 @@ class AiNotebookApp {
       nameInput.addEventListener("focus", () => {
         this.lastFocusedEditor = nameInput;
       });
-
-      if (llmSelect) {
-        llmSelect.addEventListener("change", (e) => {
-          const value = e.target.value;
-          this.updateCells((cells) =>
-            cells.map((c) =>
-              c.id === cell.id ? { ...c, modelId: value } : c
-            ),
-            { changedIds: [cell.id] }
-          );
-        });
-      }
 
       if (systemTextarea) {
         systemTextarea.addEventListener("input", (e) => {
