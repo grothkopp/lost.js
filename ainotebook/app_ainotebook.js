@@ -630,7 +630,8 @@ class AiNotebookApp {
 
     cells.forEach((cell, index) => {
       const root = document.createElement("article");
-      root.className = "cell";
+      const typeClass = cell.type ? `type-${cell.type}` : "type-markdown";
+      root.className = `cell ${typeClass}`;
       root.dataset.id = cell.id;
       const baseRef = this.getPreferredRef(cell, index);
 
@@ -644,7 +645,7 @@ class AiNotebookApp {
       header.appendChild(idxSpan);
 
       const typePill = document.createElement("span");
-      typePill.className = "cell-type-pill";
+      typePill.className = "cell-type-pill " + typeClass;
       typePill.textContent =
         cell.type === "prompt"
           ? "Prompt"
@@ -695,6 +696,9 @@ class AiNotebookApp {
       const statusSpan = document.createElement("span");
       statusSpan.className = "cell-status";
       const isRunning = this.runningCells.has(cell.id);
+      if (isRunning) {
+        root.classList.add("is-running");
+      }
       if (this.runningCells.has(cell.id)) {
         statusSpan.classList.add("running");
         statusSpan.textContent = "Running…";
