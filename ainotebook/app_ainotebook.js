@@ -12,6 +12,7 @@ const DEFAULT_SYSTEM_PROMPT =
 const DEFAULT_NOTEBOOK = {
   title: "New Notebook",
   notebookModelId: "",
+  notebookParams: "",
   cells: [
     {
       id: "cell_intro",
@@ -41,6 +42,7 @@ const DEFAULT_NOTEBOOK = {
         "Summarize the notes from {{notes}} in 3 bullet points. " +
         "Respond in Markdown.",
       systemPrompt: "{{ var_systemprompt }}",
+      params: "",
       _outputExpanded: false,
       modelId: "",
       lastOutput: "",
@@ -734,6 +736,7 @@ class AiNotebookApp {
           ? ""
           : `Explain {{md_${index - 1} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
+      params: "",
       _outputExpanded: false,
       modelId: "",
       lastOutput: "",
@@ -766,6 +769,7 @@ class AiNotebookApp {
           ? ""
           : `Explain {{md_${Math.max(1, insertIndex)} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
+      params: "",
       _outputExpanded: false,
       modelId: "",
       lastOutput: "",
@@ -1005,6 +1009,9 @@ class AiNotebookApp {
     labelSpan.className = "notebook-model-heading";
     container.appendChild(labelSpan);
 
+    const row = document.createElement("div");
+    row.className = "model-picker-row";
+
     const picker = this.createModelPicker({
       selectedId: this.currentNotebook?.notebookModelId || "",
       searchTerm: this.modelSearchTermNotebook || "",
@@ -1020,8 +1027,88 @@ class AiNotebookApp {
         this.lost.update(item.id, { notebookModelId: id });
       }
     });
-    container.appendChild(picker);
+    row.appendChild(picker);
+
+    const paramsUi = this.createParamsUi(
+      this.currentNotebook?.notebookParams || "",
+      (val) => {
+        const item = this.currentNotebook;
+        if (!item) return;
+        this.lost.update(item.id, { notebookParams: val });
+      }
+    );
+    row.appendChild(paramsUi);
+
+    container.appendChild(row);
   }
+
+  createParamsUi(initialValue, onChange) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "model-params-wrapper";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "model-params-btn";
+    btn.textContent = "+";
+    btn.title = "Add parameters (temperature, etc.)";
+
+    const hasValue = !!(initialValue && initialValue.trim());
+    if (hasValue) {
+      btn.classList.add("active");
+    }
+
+    const panel = document.createElement("div");
+    panel.className = "model-params-panel";
+    panel.style.display = "none";
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "model-params-textarea";
+    textarea.placeholder = "temperature=0.5\ntop_p=0.7\nfrequency_penalty=0.05";
+    textarea.value = initialValue || "";
+
+    textarea.addEventListener("input", (e) => {
+      const val = e.target.value;
+      if (val.trim()) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+      onChange(val);
+    });
+
+    const togglePanel = () => {
+      const isHidden = panel.style.display === "none";
+      if (isHidden) {
+        panel.style.display = "block";
+        textarea.focus();
+        document.addEventListener("click", handleOutside, { capture: true });
+      } else {
+        closePanel();
+      }
+    };
+
+    const closePanel = () => {
+      panel.style.display = "none";
+      document.removeEventListener("click", handleOutside, { capture: true });
+    };
+
+    const handleOutside = (e) => {
+      if (!wrapper.contains(e.target)) {
+        closePanel();
+      }
+    };
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePanel();
+    });
+
+    panel.appendChild(textarea);
+    wrapper.appendChild(btn);
+    wrapper.appendChild(panel);
+    return wrapper;
+  }
+
 
   createModelPicker(config) {
     const {
@@ -1264,6 +1351,18 @@ class AiNotebookApp {
         });
         llmSelect = picker;
         header.appendChild(picker);
+
+        const paramsUi = this.createParamsUi(
+          cell.params || "",
+          (val) => {
+            this.updateCells(
+              (cells) =>
+                cells.map((c) => (c.id === cell.id ? { ...c, params: val } : c)),
+              { changedIds: [cell.id] }
+            );
+          }
+        );
+        header.appendChild(paramsUi);
       }
 
       const statusSpan = document.createElement("span");
@@ -1495,6 +1594,12 @@ class AiNotebookApp {
         if (info.durationMs != null)
           parts.push(`time: ${this.formatDuration(info.durationMs)}`);
         if (info.model) parts.push(`model: ${info.model}`);
+        if (info.params && Object.keys(info.params).length > 0) {
+          const p = Object.entries(info.params)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(" ");
+          parts.push(p);
+        }
         meta.textContent = parts.join(" · ");
         meta.title = "Click to view request/response log";
         meta.addEventListener("click", () => this.showLogOverlay(info));
@@ -1690,12 +1795,36 @@ class AiNotebookApp {
       return { type: "notebook-title" };
     }
 
+    if (active.classList.contains("model-params-textarea")) {
+      const cellEl = active.closest(".cell");
+      if (cellEl) {
+        return {
+          cellId: cellEl.dataset.id,
+          role: "params",
+          selection:
+            typeof active.selectionStart === "number"
+              ? { start: active.selectionStart, end: active.selectionEnd }
+              : null
+        };
+      }
+      if (active.closest(".notebook-toolbar-label")) {
+        return {
+          type: "notebook-params",
+          selection:
+            typeof active.selectionStart === "number"
+              ? { start: active.selectionStart, end: active.selectionEnd }
+              : null
+        };
+      }
+    }
+
     const cellEl = active.closest(".cell");
     if (!cellEl) return null;
 
     const cellId = cellEl.dataset.id;
     let role = null;
-    if (active.classList.contains("cell-system-textarea")) role = "system-textarea";
+    if (active.classList.contains("cell-system-textarea"))
+      role = "system-textarea";
     else if (active.classList.contains("cell-textarea")) role = "textarea";
     else if (active.classList.contains("cell-name-input")) role = "name";
     else if (active.classList.contains("cell-type-select")) role = "type";
@@ -1718,16 +1847,54 @@ class AiNotebookApp {
       return;
     }
 
-    if (!state.cellId || !state.role) return;
+    if (state.type === "notebook-params") {
+      const container = this.notebookModelLabel;
+      const btn = container?.querySelector(".model-params-btn");
+      if (btn) {
+        btn.click(); // Open panel
+        const textarea = container.querySelector(".model-params-textarea");
+        if (textarea) {
+          textarea.focus({ preventScroll: true });
+          if (state.selection) {
+            textarea.setSelectionRange(
+              state.selection.start,
+              state.selection.end
+            );
+          }
+        }
+      }
+      return;
+    }
+
+    if (!state.cellId) return;
 
     const cellEl = this.cellsContainer.querySelector(
       `article.cell[data-id="${state.cellId}"]`
     );
     if (!cellEl) return;
 
+    if (state.role === "params") {
+      const btn = cellEl.querySelector(".model-params-btn");
+      if (btn) {
+        btn.click(); // Open panel
+        const textarea = cellEl.querySelector(".model-params-textarea");
+        if (textarea) {
+          textarea.focus({ preventScroll: true });
+          if (state.selection) {
+            textarea.setSelectionRange(
+              state.selection.start,
+              state.selection.end
+            );
+          }
+        }
+      }
+      return;
+    }
+
     let target = null;
     if (state.role === "system-textarea") {
-      target = cellEl.querySelector(".cell-system-textarea") ||
+      target =
+        cellEl.querySelector(".cell-system-textarea") ||
         cellEl.querySelector(".cell-textarea");
     } else if (state.role === "textarea") {
       target =
@@ -1874,6 +2041,24 @@ class AiNotebookApp {
     });
   }
 
+  parseParams(str) {
+    if (!str || !str.trim()) return {};
+    const params = {};
+    str.split("\n").forEach((line) => {
+      const parts = line.split("=");
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const valStr = parts.slice(1).join("=").trim();
+        let val = valStr;
+        if (!isNaN(valStr) && valStr !== "") val = Number(valStr);
+        else if (valStr === "true") val = true;
+        else if (valStr === "false") val = false;
+        params[key] = val;
+      }
+    });
+    return params;
+  }
+
   async runPromptCell(cellId) {
     const item = this.lost.getCurrent();
     if (!item) return;
@@ -1896,6 +2081,19 @@ class AiNotebookApp {
       return;
     }
 
+    // Parse params
+    const notebookParams = this.parseParams(item.notebookParams);
+    const cellParams = this.parseParams(cell.params);
+    let finalParams = {};
+    if (cell.modelId) {
+      // Cell has specific model override -> use only cell params (do not inherit notebook params)
+      finalParams = cellParams;
+    } else {
+      // Cell uses default model -> use cell params override, or fallback to notebook params
+      finalParams =
+        Object.keys(cellParams).length > 0 ? cellParams : notebookParams;
+    }
+
     // Build final prompt with environment
     const env = this.buildEnvironment(item);
     const finalPrompt = this.expandTemplate(cell.text || "", env);
@@ -1916,7 +2114,8 @@ class AiNotebookApp {
         model,
         finalPrompt,
         finalSystemPrompt,
-        controller.signal
+        controller.signal,
+        finalParams
       );
       const output =
         result && typeof result === "object" && "text" in result
@@ -1964,6 +2163,7 @@ class AiNotebookApp {
                       model.model ||
                       model.id ||
                       "",
+                    params: finalParams,
                     _rawRequest: rawRequest,
                     _rawResponse: rawResponse
                   }
@@ -2435,18 +2635,18 @@ class AiNotebookApp {
     textarea.focus();
   }
 
-  async callLLM(model, prompt, systemPrompt, signal) {
+  async callLLM(model, prompt, systemPrompt, signal, params = {}) {
     if (model.provider === "claude") {
-      return this.callClaude(model, prompt, systemPrompt, signal);
+      return this.callClaude(model, prompt, systemPrompt, signal, params);
     }
     if (model.provider === "openrouter") {
-      return this.callOpenRouter(model, prompt, systemPrompt, signal);
+      return this.callOpenRouter(model, prompt, systemPrompt, signal, params);
     }
     // default to openai
-    return this.callOpenAI(model, prompt, systemPrompt, signal);
+    return this.callOpenAI(model, prompt, systemPrompt, signal, params);
   }
 
-  async callOpenAI(model, prompt, systemPrompt, signal) {
+  async callOpenAI(model, prompt, systemPrompt, signal, params) {
     const baseUrl = (model.baseUrl || "https://api.openai.com/v1").replace(
       /\/+$/,
       ""
@@ -2455,6 +2655,7 @@ class AiNotebookApp {
 
     const requestBody = {
       model: model.model,
+      ...params,
       messages: [
         {
           role: "system",
@@ -2506,7 +2707,7 @@ class AiNotebookApp {
     };
   }
 
-  async callClaude(model, prompt, systemPrompt, signal) {
+  async callClaude(model, prompt, systemPrompt, signal, params) {
     const baseUrl = (model.baseUrl || "https://api.anthropic.com/v1").replace(
       /\/+$/,
       ""
@@ -2516,6 +2717,7 @@ class AiNotebookApp {
     const requestBody = {
       model: model.model,
       max_tokens: 1024,
+      ...params,
       system: systemPrompt || DEFAULT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }]
     };
@@ -2561,7 +2763,7 @@ class AiNotebookApp {
     };
   }
 
-  async callOpenRouter(model, prompt, systemPrompt, signal) {
+  async callOpenRouter(model, prompt, systemPrompt, signal, params) {
     const baseUrl = (model.baseUrl || "https://openrouter.ai/api/v1").replace(
       /\/+$/,
       ""
@@ -2575,6 +2777,7 @@ class AiNotebookApp {
     };
     const requestBody = {
       model: model.model,
+      ...params,
       messages: [
         {
           role: "system",
