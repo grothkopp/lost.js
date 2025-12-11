@@ -1139,6 +1139,19 @@ class AiNotebookApp {
       } else {
         output.textContent = outputText;
       }
+      if (cell.type === "markdown" || cell.type === "variable") {
+        const insertBtn = document.createElement("button");
+        insertBtn.type = "button";
+        insertBtn.className = "output-insert-btn";
+        insertBtn.textContent = "{}";
+        insertBtn.title = `Insert reference {{ ${baseRef} }}`;
+        insertBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.insertReference(`{{ ${baseRef} }}`, { ensureVisible: true });
+        });
+        output.appendChild(insertBtn);
+      }
       if (cell.stale && cell.type === "prompt") {
         output.classList.add("stale");
       }
@@ -1161,13 +1174,13 @@ class AiNotebookApp {
         if (target?.dataset?.ref) {
           e.preventDefault();
           e.stopPropagation();
-          this.insertReference(target.dataset.ref);
+          this.insertReference(target.dataset.ref, { ensureVisible: true });
           return;
         }
-        if (!parsed.isJson) {
+        if (cell.type === "prompt" && !parsed.isJson) {
           e.preventDefault();
           e.stopPropagation();
-          this.insertReference(`{{ ${baseRef} }}`);
+          this.insertReference(`{{ ${baseRef} }}`, { ensureVisible: true });
         }
       });
       body.appendChild(output);
@@ -1189,6 +1202,10 @@ class AiNotebookApp {
       });
 
       // Type switching handled via custom menu
+
+      nameInput.addEventListener("focus", () => {
+        this.lastFocusedEditor = nameInput;
+      });
 
       if (llmSelect) {
         llmSelect.addEventListener("change", (e) => {
@@ -1890,7 +1907,8 @@ class AiNotebookApp {
     return `${minutes}:${seconds}`;
   }
 
-  insertReference(ref) {
+  insertReference(ref, opts = {}) {
+    const { ensureVisible = false } = opts;
     const target =
       this.lastFocusedEditor && document.body.contains(this.lastFocusedEditor)
         ? this.lastFocusedEditor
@@ -1908,6 +1926,14 @@ class AiNotebookApp {
     target.setSelectionRange(newPos, newPos);
     target.dispatchEvent(new Event("input", { bubbles: true }));
     target.focus({ preventScroll: true });
+    if (ensureVisible) {
+      const rect = target.getBoundingClientRect();
+      const inView =
+        rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+      if (!inView) {
+        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
   }
 
   async callLLM(model, prompt, signal) {
