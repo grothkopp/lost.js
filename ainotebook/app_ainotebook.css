@@ -283,7 +283,7 @@
 
 .cell-textarea {
   width: 100%;
-  min-height: 90px;
+  min-height: 0;
   resize: vertical;
   border-radius: 8px;
   border: 1px solid var(--nb-border);
@@ -349,8 +349,8 @@
 .cell-output {
   margin-top: 6px;
   border-radius: 8px;
-  border: 1px dashed rgba(148, 163, 184, 0.8);
-  background: rgba(148, 163, 184, 0.12); /* lighter in light mode, still readable in dark */
+  border-color: rgba(250, 204, 21, 0.9);
+  background: rgba(250, 204, 21, 0.08);
   padding: 8px 10px;
   font-size: 13px;
   white-space: pre-wrap;
@@ -369,8 +369,8 @@
 }
 
 .cell-output.stale {
-  border-color: rgba(250, 204, 21, 0.9);
-  background: rgba(250, 204, 21, 0.08);
+  border: 1px dashed rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.12); /* lighter in light mode, still readable in dark */
 }
 
 .cell-run-meta {

@@ -859,6 +859,8 @@ class AiNotebookApp {
       root.appendChild(body);
       this.cellsContainer.appendChild(root);
 
+      this.applyTextareaHeight(textarea, "collapsed");
+
       // ----- Per-cell event handlers -----
 
       nameInput.addEventListener("input", (e) => {
@@ -901,6 +903,7 @@ class AiNotebookApp {
       textarea.addEventListener("input", (e) => {
         const text = e.target.value;
         this.templateHoverCache.delete(textarea);
+        this.applyTextareaHeight(textarea);
         this.updateCells((cells) =>
           cells.map((c) =>
             c.id === cell.id ? { ...c, text, error: "" } : c
@@ -910,6 +913,10 @@ class AiNotebookApp {
       });
       textarea.addEventListener("focus", () => {
         this.lastFocusedEditor = textarea;
+        this.applyTextareaHeight(textarea, "expanded");
+      });
+      textarea.addEventListener("blur", () => {
+        this.applyTextareaHeight(textarea, "collapsed");
       });
       const handleHoverMove = (e) => this.handleTextareaHover(e, env);
       textarea.addEventListener("mousemove", handleHoverMove);
@@ -1017,6 +1024,40 @@ class AiNotebookApp {
         target.setSelectionRange(start, end);
       }
     }
+  }
+
+  // ---------- Textarea sizing ----------
+
+  applyTextareaHeight(textarea, mode = null) {
+    if (!textarea) return;
+    const desiredMode =
+      mode || (document.activeElement === textarea ? "expanded" : "collapsed");
+    textarea.style.height = "auto";
+    const cs = getComputedStyle(textarea)
+    const lineHeight = parseFloat(cs.lineHeight);
+    let fullHeight = textarea.scrollHeight
+    if (fullHeight < lineHeight * 3) {
+      fullHeight -= lineHeight;
+    }
+    const collapsedHeight = this.getCollapsedHeight(textarea, 4);
+    const targetHeight =
+      desiredMode === "expanded" || fullHeight <= collapsedHeight
+        ? fullHeight
+        : collapsedHeight;
+    textarea.style.height = `${targetHeight}px`;
+  }
+
+  getCollapsedHeight(textarea, lines = 4) {
+    const cs = getComputedStyle(textarea);
+    const lineHeight =
+      parseFloat(cs.lineHeight) ||
+      (parseFloat(cs.fontSize) ? parseFloat(cs.fontSize) * 1.4 : 18);
+    const paddingY =
+      (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const borderY =
+      (parseFloat(cs.borderTopWidth) || 0) +
+      (parseFloat(cs.borderBottomWidth) || 0);
+    return Math.round(lineHeight * lines + paddingY + borderY);
   }
 
   // ---------- Prompt execution ----------
