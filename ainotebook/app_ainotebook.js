@@ -289,7 +289,7 @@ class AiNotebookApp {
   }
 
   getProviderLabel(provider) {
-    if (provider === "claude") return "Claude";
+    if (provider === "claude") return "Anthropic";
     if (provider === "openrouter") return "OpenRouter";
     return "OpenAI";
   }
@@ -510,7 +510,7 @@ class AiNotebookApp {
         '<span>Provider</span>' +
         '<select class="llm-provider-select">' +
         '<option value="openai">OpenAI</option>' +
-        '<option value="claude">Claude</option>' +
+        '<option value="claude">Anthropic</option>' +
         '<option value="openrouter">OpenRouter</option>' +
         "</select>";
       const providerSelect = providerField.querySelector("select");
