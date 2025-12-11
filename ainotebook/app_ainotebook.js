@@ -5,6 +5,9 @@ import MarkdownIt from "https://esm.sh/markdown-it@13.0.1";
 const STORAGE_KEY = "app-ainotebook-v1";
 const LLM_SETTINGS_KEY = "ainotebook-llm-settings-v1";
 
+const DEFAULT_SYSTEM_PROMPT =
+  "You are an AI assistant inside a local notebook app. Return concise answers in Markdown.";
+
 const DEFAULT_NOTEBOOK = {
   title: "New Notebook",
   notebookModelId: "",
@@ -26,6 +29,7 @@ const DEFAULT_NOTEBOOK = {
       text:
         "Summarize the notes from {{notes}} in 3 bullet points. " +
         "Respond in Markdown.",
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
       modelId: "",
       lastOutput: "",
       error: "",
@@ -157,6 +161,7 @@ class AiNotebookApp {
     this.modelSearchTermNotebook = "";
     this.cellModelSearch = new Map(); // cellId -> search term
     this.refreshModelsInFlight = false;
+    this.pendingFocusState = null;
 
     this.bindEvents();
     this.init();
@@ -668,6 +673,7 @@ class AiNotebookApp {
           : type === "variable"
           ? ""
           : `Explain {{md_${index - 1} || notes}}`,
+      systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
       modelId: "",
       lastOutput: "",
       error: "",
@@ -875,7 +881,9 @@ class AiNotebookApp {
     const item = this.currentNotebook;
     if (!item) return;
 
-    const focusState = this.captureFocusState();
+    const focusState =
+      this.pendingFocusState || this.captureFocusState();
+    this.pendingFocusState = null;
     this.parsedOutputs.clear();
 
     // Toolbar actions state
@@ -1132,8 +1140,24 @@ class AiNotebookApp {
       const body = document.createElement("div");
       body.className = "cell-body";
 
+      let systemTextarea = null;
+      if (cell.type === "prompt") {
+        const systemLabel = document.createElement("div");
+        systemLabel.className = "cell-subtitle";
+        systemLabel.textContent = "System prompt";
+        body.appendChild(systemLabel);
+
+        systemTextarea = document.createElement("textarea");
+        systemTextarea.className = "cell-textarea cell-system-textarea";
+        systemTextarea.value =
+          cell.systemPrompt != null && cell.systemPrompt !== ""
+            ? cell.systemPrompt
+            : DEFAULT_SYSTEM_PROMPT;
+        body.appendChild(systemTextarea);
+      }
+
       const textarea = document.createElement("textarea");
-      textarea.className = "cell-textarea";
+      textarea.className = "cell-textarea cell-user-textarea";
       textarea.value = cell.text || "";
       body.appendChild(textarea);
 
@@ -1233,6 +1257,9 @@ class AiNotebookApp {
       root.appendChild(body);
       this.cellsContainer.appendChild(root);
 
+      if (systemTextarea) {
+        this.applyTextareaHeight(systemTextarea, "collapsed");
+      }
       this.applyTextareaHeight(textarea, "collapsed");
 
       // ----- Per-cell event handlers -----
@@ -1264,8 +1291,58 @@ class AiNotebookApp {
         });
       }
 
+      if (systemTextarea) {
+        systemTextarea.addEventListener("input", (e) => {
+          const systemPrompt = e.target.value;
+          this.pendingFocusState = {
+            cellId: cell.id,
+            role: "system-textarea",
+            selection:
+              typeof systemTextarea.selectionStart === "number" &&
+              typeof systemTextarea.selectionEnd === "number"
+                ? {
+                    start: systemTextarea.selectionStart,
+                    end: systemTextarea.selectionEnd
+                  }
+                : null
+          };
+          this.templateHoverCache.delete(systemTextarea);
+          this.applyTextareaHeight(systemTextarea);
+          this.updateCells((cells) =>
+            cells.map((c) =>
+              c.id === cell.id ? { ...c, systemPrompt, error: "" } : c
+            ),
+            { changedIds: [cell.id] }
+          );
+        });
+        systemTextarea.addEventListener("focus", () => {
+          this.lastFocusedEditor = systemTextarea;
+          this.applyTextareaHeight(systemTextarea, "expanded");
+        });
+        systemTextarea.addEventListener("blur", () => {
+          this.applyTextareaHeight(systemTextarea, "collapsed");
+        });
+        const handleSystemHover = (e) => this.handleTextareaHover(e, env);
+        systemTextarea.addEventListener("mousemove", handleSystemHover);
+        systemTextarea.addEventListener("mouseleave", () =>
+          this.hideVariableTooltip()
+        );
+      }
+
       textarea.addEventListener("input", (e) => {
         const text = e.target.value;
+        this.pendingFocusState = {
+          cellId: cell.id,
+          role: "textarea",
+          selection:
+            typeof textarea.selectionStart === "number" &&
+            typeof textarea.selectionEnd === "number"
+              ? {
+                  start: textarea.selectionStart,
+                  end: textarea.selectionEnd
+                }
+              : null
+        };
         this.templateHoverCache.delete(textarea);
         this.applyTextareaHeight(textarea);
         this.updateCells((cells) =>
@@ -1338,7 +1415,8 @@ class AiNotebookApp {
 
     const cellId = cellEl.dataset.id;
     let role = null;
-    if (active.classList.contains("cell-textarea")) role = "textarea";
+    if (active.classList.contains("cell-system-textarea")) role = "system-textarea";
+    else if (active.classList.contains("cell-textarea")) role = "textarea";
     else if (active.classList.contains("cell-name-input")) role = "name";
     else if (active.classList.contains("cell-type-select")) role = "type";
     else if (active.classList.contains("cell-llm-select")) role = "llm";
@@ -1368,8 +1446,13 @@ class AiNotebookApp {
     if (!cellEl) return;
 
     let target = null;
-    if (state.role === "textarea") {
-      target = cellEl.querySelector(".cell-textarea");
+    if (state.role === "system-textarea") {
+      target = cellEl.querySelector(".cell-system-textarea") ||
+        cellEl.querySelector(".cell-textarea");
+    } else if (state.role === "textarea") {
+      target =
+        cellEl.querySelector(".cell-user-textarea") ||
+        cellEl.querySelector(".cell-textarea");
     } else if (state.role === "name") {
       target = cellEl.querySelector(".cell-name-input");
     } else if (state.role === "type") {
@@ -1529,6 +1612,10 @@ class AiNotebookApp {
     // Build final prompt with environment
     const env = this.buildEnvironment(item);
     const finalPrompt = this.expandTemplate(cell.text || "", env);
+    const finalSystemPrompt = this.expandTemplate(
+      cell.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      env
+    );
 
     const controller = new AbortController();
     this.runningControllers.set(cellId, controller);
@@ -1538,7 +1625,12 @@ class AiNotebookApp {
     this.renderNotebook();
 
     try {
-      const result = await this.callLLM(model, finalPrompt, controller.signal);
+      const result = await this.callLLM(
+        model,
+        finalPrompt,
+        finalSystemPrompt,
+        controller.signal
+      );
       const output =
         result && typeof result === "object" && "text" in result
           ? result.text
@@ -2056,18 +2148,18 @@ class AiNotebookApp {
     textarea.focus();
   }
 
-  async callLLM(model, prompt, signal) {
+  async callLLM(model, prompt, systemPrompt, signal) {
     if (model.provider === "claude") {
-      return this.callClaude(model, prompt, signal);
+      return this.callClaude(model, prompt, systemPrompt, signal);
     }
     if (model.provider === "openrouter") {
-      return this.callOpenRouter(model, prompt, signal);
+      return this.callOpenRouter(model, prompt, systemPrompt, signal);
     }
     // default to openai
-    return this.callOpenAI(model, prompt, signal);
+    return this.callOpenAI(model, prompt, systemPrompt, signal);
   }
 
-  async callOpenAI(model, prompt, signal) {
+  async callOpenAI(model, prompt, systemPrompt, signal) {
     const baseUrl = (model.baseUrl || "https://api.openai.com/v1").replace(
       /\/+$/,
       ""
@@ -2079,9 +2171,7 @@ class AiNotebookApp {
       messages: [
         {
           role: "system",
-          content:
-            "You are an AI assistant inside a local notebook app. " +
-            "Return concise answers in Markdown."
+          content: systemPrompt || DEFAULT_SYSTEM_PROMPT
         },
         { role: "user", content: prompt }
       ]
@@ -2129,7 +2219,7 @@ class AiNotebookApp {
     };
   }
 
-  async callClaude(model, prompt, signal) {
+  async callClaude(model, prompt, systemPrompt, signal) {
     const baseUrl = (model.baseUrl || "https://api.anthropic.com/v1").replace(
       /\/+$/,
       ""
@@ -2139,6 +2229,7 @@ class AiNotebookApp {
     const requestBody = {
       model: model.model,
       max_tokens: 1024,
+      system: systemPrompt || DEFAULT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }]
     };
     const requestHeaders = {
@@ -2183,7 +2274,7 @@ class AiNotebookApp {
     };
   }
 
-  async callOpenRouter(model, prompt, signal) {
+  async callOpenRouter(model, prompt, systemPrompt, signal) {
     const baseUrl = (model.baseUrl || "https://openrouter.ai/api/v1").replace(
       /\/+$/,
       ""
@@ -2200,9 +2291,7 @@ class AiNotebookApp {
       messages: [
         {
           role: "system",
-          content:
-            "You are an AI assistant inside a local notebook app. " +
-            "Return concise answers in Markdown."
+          content: systemPrompt || DEFAULT_SYSTEM_PROMPT
         },
         { role: "user", content: prompt }
       ]

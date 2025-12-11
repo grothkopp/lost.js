@@ -406,6 +406,18 @@
   gap: 8px;
 }
 
+.cell-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nb-muted);
+  margin: 4px 0 -2px;
+}
+
+.cell-system-textarea {
+  border-style: dashed;
+  background: rgba(148, 163, 184, 0.08);
+}
+
 .cell-textarea {
   width: 100%;
   min-height: 0;
