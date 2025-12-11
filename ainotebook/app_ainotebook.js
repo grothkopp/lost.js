@@ -24,13 +24,23 @@ const DEFAULT_NOTEBOOK = {
       _stale: false
     },
     {
+      id: "cell_var_systemprompt",
+      type: "variable",
+      name: "var_systemprompt",
+      text: DEFAULT_SYSTEM_PROMPT,
+      modelId: "",
+      lastOutput: "",
+      error: "",
+      _stale: false
+    },
+    {
       id: "cell_summary",
       type: "prompt",
       name: "summary",
       text:
         "Summarize the notes from {{notes}} in 3 bullet points. " +
         "Respond in Markdown.",
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      systemPrompt: "{{ var_systemprompt }}",
       _outputExpanded: false,
       modelId: "",
       lastOutput: "",
@@ -1633,12 +1643,19 @@ class AiNotebookApp {
     const desiredMode =
       mode || (document.activeElement === textarea ? "expanded" : "collapsed");
     textarea.style.height = "auto";
+    textarea.rows = 1;
+    let fullHeight = textarea.scrollHeight
+    /*
     const cs = getComputedStyle(textarea)
     const lineHeight = parseFloat(cs.lineHeight);
+    const paddingTop = parseFloat(cs.paddingTop) || 0;
+    const paddingBottom = parseFloat(cs.paddingBottom) || 0;
+
     let fullHeight = textarea.scrollHeight
-    if (fullHeight < lineHeight * 3) {
+    console.log("fullHeight:", fullHeight, "lineHeight:", lineHeight, "paddingTop:", paddingTop, "paddingBottom:", paddingBottom);
+    if (fullHeight < (lineHeight * 2) + paddingTop + paddingBottom) {
       fullHeight -= lineHeight;
-    }
+    }*/
     const collapsedHeight = this.getCollapsedHeight(textarea, 4);
     const targetHeight =
       desiredMode === "expanded" || fullHeight <= collapsedHeight
