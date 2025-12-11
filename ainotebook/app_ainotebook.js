@@ -285,12 +285,14 @@ class AiNotebookApp {
   getProviderDefaultBaseUrl(provider) {
     if (provider === "claude") return "https://api.anthropic.com/v1";
     if (provider === "openrouter") return "https://openrouter.ai/api/v1";
+    if (provider === "custom") return "";
     return "https://api.openai.com/v1";
   }
 
   getProviderLabel(provider) {
     if (provider === "claude") return "Anthropic";
     if (provider === "openrouter") return "OpenRouter";
+    if (provider === "custom") return "Custom";
     return "OpenAI";
   }
 
@@ -512,6 +514,7 @@ class AiNotebookApp {
         '<option value="openai">OpenAI</option>' +
         '<option value="claude">Anthropic</option>' +
         '<option value="openrouter">OpenRouter</option>' +
+        '<option value="custom">Custom</option>' +
         "</select>";
       const providerSelect = providerField.querySelector("select");
       providerSelect.value = provider.provider || "openai";
@@ -542,8 +545,12 @@ class AiNotebookApp {
 
       // Provider change default base URL
       providerSelect.addEventListener("change", () => {
-        if (baseInput.value.trim()) return;
-        baseInput.value = this.getProviderDefaultBaseUrl(providerSelect.value);
+        const defaultBase = this.getProviderDefaultBaseUrl(providerSelect.value);
+        if (defaultBase) {
+          baseInput.value = defaultBase;
+        } else if (!baseInput.value.trim()) {
+          baseInput.value = "";
+        }
       });
 
       // Delete button
@@ -889,31 +896,87 @@ class AiNotebookApp {
       idxSpan.textContent = `#${index + 1}`;
       header.appendChild(idxSpan);
 
-      const typePill = document.createElement("span");
-      typePill.className = "cell-type-pill " + typeClass;
-      typePill.textContent =
+      const typePill = document.createElement("div");
+      typePill.className = `cell-type-pill ${typeClass}`;
+      const typeLabel = document.createElement("span");
+      typeLabel.className = "cell-type-label";
+      typeLabel.textContent =
         cell.type === "prompt"
           ? "Prompt"
           : cell.type === "variable"
           ? "Variable"
           : "Markdown";
-      header.appendChild(typePill);
+      typePill.appendChild(typeLabel);
 
       const nameInput = document.createElement("input");
       nameInput.className = "cell-name-input";
       nameInput.type = "text";
       nameInput.placeholder = "Block name";
       nameInput.value = cell.name || "";
-      header.appendChild(nameInput);
+      typePill.appendChild(nameInput);
 
-      const typeSelect = document.createElement("select");
-      typeSelect.className = "cell-type-select";
-      typeSelect.innerHTML =
-        '<option value="markdown">Markdown</option>' +
-        '<option value="prompt">Prompt</option>' +
-        '<option value="variable">Variable</option>';
-      typeSelect.value = cell.type || "markdown";
-      header.appendChild(typeSelect);
+      const dropdownBtn = document.createElement("button");
+      dropdownBtn.type = "button";
+      dropdownBtn.className = "cell-type-dropdown";
+      dropdownBtn.setAttribute("aria-label", "Change cell type");
+      dropdownBtn.textContent = "▾";
+      typePill.appendChild(dropdownBtn);
+
+      const typeMenu = document.createElement("div");
+      typeMenu.className = "cell-type-menu";
+      const typeOptions = [
+        { value: "markdown", label: "Markdown", className: "type-markdown" },
+        { value: "prompt", label: "Prompt", className: "type-prompt" },
+        { value: "variable", label: "Variable", className: "type-variable" }
+      ];
+      typeOptions
+        .filter((opt) => opt.value !== (cell.type || "markdown"))
+        .forEach((opt) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `cell-type-option ${opt.className}`;
+          btn.textContent = opt.label;
+          btn.addEventListener("click", () => {
+            this.updateCells((cells) => {
+              return cells.map((c) =>
+                c.id === cell.id
+                  ? {
+                      ...c,
+                      type: opt.value,
+                      error: ""
+                    }
+                  : c
+              );
+            }, { changedIds: [cell.id] });
+            closeTypeMenu();
+          });
+          typeMenu.appendChild(btn);
+        });
+      typePill.appendChild(typeMenu);
+
+      const closeTypeMenu = () => {
+        typeMenu.classList.remove("open");
+        typePill.classList.remove("menu-open");
+        document.removeEventListener("click", handleOutsideClick);
+      };
+      const handleOutsideClick = (event) => {
+        if (!typePill.contains(event.target)) {
+          closeTypeMenu();
+        }
+      };
+      dropdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const willOpen = !typeMenu.classList.contains("open");
+        if (willOpen) {
+          typeMenu.classList.add("open");
+          typePill.classList.add("menu-open");
+          document.addEventListener("click", handleOutsideClick);
+        } else {
+          closeTypeMenu();
+        }
+      });
+
+      header.appendChild(typePill);
 
       let llmSelect = null;
       if (cell.type === "prompt") {
@@ -1125,21 +1188,7 @@ class AiNotebookApp {
         }, { changedIds: [cell.id] });
       });
 
-      typeSelect.addEventListener("change", (e) => {
-        const newType = e.target.value;
-        this.updateCells((cells) => {
-          return cells.map((c) =>
-            c.id === cell.id
-              ? {
-                  ...c,
-                  type: newType,
-                  // keep text / lastOutput; they may still be useful
-                  error: ""
-                }
-              : c
-          );
-        }, { changedIds: [cell.id] });
-      });
+      // Type switching handled via custom menu
 
       if (llmSelect) {
         llmSelect.addEventListener("change", (e) => {
@@ -1297,7 +1346,10 @@ class AiNotebookApp {
       desiredMode === "expanded" || fullHeight <= collapsedHeight
         ? fullHeight
         : collapsedHeight;
-    textarea.style.height = `${targetHeight}px`;
+    const viewportCap = Math.max(240, Math.floor(window.innerHeight * 0.8));
+    const finalHeight = Math.min(targetHeight, viewportCap);
+    textarea.style.maxHeight = `${viewportCap}px`;
+    textarea.style.height = `${finalHeight}px`;
   }
 
   getCollapsedHeight(textarea, lines = 4) {

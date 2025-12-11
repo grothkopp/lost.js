@@ -161,14 +161,23 @@
 }
 
 .cell-type-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 3px 8px;
+  padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.6);
   background: rgba(148, 163, 184, 0.08);
   color: var(--nb-muted);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.cell-type-label {
+  font-weight: 700;
 }
 
 .cell.type-markdown {
@@ -202,16 +211,99 @@
   background: rgba(34, 197, 94, 0.12);
 }
 
-.cell-name-input {
+.cell-type-pill .cell-name-input {
   flex: 1;
-  min-width: 60px;
-  max-width: 240px;
+  min-width: 80px;
+  max-width: 220px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
+  outline: none;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cell-type-pill .cell-name-input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.cell-type-pill.menu-open {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16), 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
+.cell-type-dropdown {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
   border-radius: 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.cell-type-dropdown:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.cell-type-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--nb-panel);
   border: 1px solid var(--nb-border);
-  padding: 4px 8px;
-  font-size: 13px;
-  background: var(--nb-bg);
-  color: var(--nb-text);
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  z-index: 5;
+  min-width: 160px;
+}
+
+.cell-type-menu.open {
+  display: flex;
+}
+
+.cell-type-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--nb-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.cell-type-option:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.15);
+}
+
+.cell-type-option.type-markdown {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.cell-type-option.type-prompt {
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.3);
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.cell-type-option.type-variable {
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.12);
 }
 
 .cell-type-select,
