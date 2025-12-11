@@ -66,6 +66,10 @@ class AiNotebookApp {
       this.onNotebookUpdate(e.detail)
     );
 
+    this.bindEvents();
+    this.buildLogOverlay();
+    this.onNotebookUpdate(this.lost.getCurrent());
+
     // ---------- LostUI shell ----------
     this.uiShell = new LostUI(this.lost, {
       container: document.body,
@@ -118,10 +122,18 @@ class AiNotebookApp {
     this.llmListEl = document.getElementById("llmList");
     this.addLlmBtn = document.getElementById("addLlmBtn");
     this.refreshModelsBtn = document.getElementById("refreshModelsBtn");
-    this.modelCacheStatus = document.getElementById("modelCacheStatus");
+    this.modelSearchInput = document.getElementById("modelSearchInput");
+    this.modelSearchNotebookInput =
+      document.getElementById("modelSearchNotebookInput");
+
     this.settingsCloseBtn = document.getElementById("settingsCloseBtn");
     this.runAllBtn = document.getElementById("runAllBtn");
     this.stopAllBtn = document.getElementById("stopAllBtn");
+
+    // LLM log overlay elements
+    this.logOverlay = null;
+    this.logOverlayTextarea = null;
+    this.logOverlayClose = null;
 
     // ---------- runtime state ----------
     this.currentNotebook = null;
@@ -135,7 +147,7 @@ class AiNotebookApp {
     this.md = new MarkdownIt({
       html: false,
       linkify: true,
-      breaks: true
+      typographer: true
     });
     this.referenceMenu = null;
     this.varTooltipEl = null;
@@ -159,37 +171,41 @@ class AiNotebookApp {
 
   bindEvents() {
     // Toolbar
-    this.notebookTitleInput.addEventListener("input", (e) => {
-      const item = this.lost.getCurrent();
-      if (!item) return;
-      this.lost.update(item.id, { title: e.target.value });
-    });
+    if (this.notebookTitleInput) {
+      this.notebookTitleInput.addEventListener("input", (e) => {
+        const item = this.lost.getCurrent();
+        if (!item) return;
+        this.lost.update(item.id, { title: e.target.value });
+      });
+    }
 
-    this.notebookModelSelect.addEventListener("change", (e) => {
-      const item = this.lost.getCurrent();
-      if (!item) return;
-      this.lost.update(item.id, { notebookModelId: e.target.value });
-    });
+    if (this.notebookModelSelect) {
+      this.notebookModelSelect.addEventListener("change", (e) => {
+        const item = this.lost.getCurrent();
+        if (!item) return;
+        this.lost.update(item.id, { notebookModelId: e.target.value });
+      });
+    }
 
-    this.addMarkdownBtn.addEventListener("click", () =>
+    this.addMarkdownBtn?.addEventListener("click", () =>
       this.addCell("markdown")
     );
-    this.addPromptBtn.addEventListener("click", () => this.addCell("prompt"));
-    this.addVarBtn.addEventListener("click", () => this.addCell("variable"));
+    this.addPromptBtn?.addEventListener("click", () => this.addCell("prompt"));
+    this.addVarBtn?.addEventListener("click", () => this.addCell("variable"));
 
-    this.runAllBtn.addEventListener("click", () => this.runAllPromptCells());
-    this.stopAllBtn.addEventListener("click", () => this.stopAllCells());
+    this.runAllBtn?.addEventListener("click", () => this.runAllPromptCells());
+    this.stopAllBtn?.addEventListener("click", () => this.stopAllCells());
 
     // Settings dialog
-    this.addLlmBtn.addEventListener("click", () => this.addLlmRow());
+    this.addLlmBtn?.addEventListener("click", () => this.addLlmRow());
     if (this.refreshModelsBtn) {
       this.refreshModelsBtn.addEventListener("click", () =>
         this.refreshModelCache()
       );
     }
-    this.settingsCloseBtn.addEventListener("click", () => {
+    this.settingsCloseBtn?.addEventListener("click", () => {
       this.saveLlmSettingsFromDialog();
-      this.settingsDialog.close();
+      this.settingsDialog?.close();
     });
     if (this.notebookModelSearch) {
       this.notebookModelSearch.addEventListener("input", (e) => {
@@ -1193,6 +1209,8 @@ class AiNotebookApp {
           parts.push(`time: ${this.formatDuration(info.durationMs)}`);
         if (info.model) parts.push(`model: ${info.model}`);
         meta.textContent = parts.join(" · ");
+        meta.title = "Click to view request/response log";
+        meta.addEventListener("click", () => this.showLogOverlay(info));
         body.appendChild(meta);
       }
       // Click to insert refs
@@ -1529,6 +1547,14 @@ class AiNotebookApp {
         result && typeof result === "object" && result.usage
           ? result.usage
           : {};
+      const rawRequest =
+        result && typeof result === "object" && result.rawRequest
+          ? result.rawRequest
+          : null;
+      const rawResponse =
+        result && typeof result === "object" && result.rawResponse
+          ? result.rawResponse
+          : null;
       const durationMs = Date.now() - this.runningStartTimes.get(cellId);
       // Persist output & clear error
       this.updateCells(
@@ -1558,7 +1584,9 @@ class AiNotebookApp {
                       model.label ||
                       model.model ||
                       model.id ||
-                      ""
+                      "",
+                    rawRequest,
+                    rawResponse
                   }
                 }
               : c
@@ -1963,6 +1991,71 @@ class AiNotebookApp {
     }
   }
 
+  sanitizeHeaders(headers = {}) {
+    const blocked = new Set(["authorization", "x-api-key"]);
+    const out = {};
+    Object.entries(headers || {}).forEach(([k, v]) => {
+      if (!blocked.has(k.toLowerCase())) {
+        out[k] = v;
+      } else {
+        out[k] = "<redacted>";
+      }
+    });
+    return out;
+  }
+
+  buildLogOverlay() {
+    if (this.logOverlay) return;
+    const overlay = document.createElement("div");
+    overlay.className = "llm-log-overlay";
+    overlay.style.display = "none";
+
+    const panel = document.createElement("div");
+    panel.className = "llm-log-panel";
+
+    const header = document.createElement("div");
+    header.className = "llm-log-header";
+    header.textContent = "LLM Request & Response";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "llm-log-close";
+    closeBtn.textContent = "✕";
+    header.appendChild(closeBtn);
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "llm-log-textarea";
+    textarea.readOnly = true;
+
+    panel.appendChild(header);
+    panel.appendChild(textarea);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    closeBtn.addEventListener("click", () => {
+      overlay.style.display = "none";
+    });
+
+    this.logOverlay = overlay;
+    this.logOverlayTextarea = textarea;
+    this.logOverlayClose = closeBtn;
+  }
+
+  showLogOverlay(log) {
+    if (!this.logOverlay) this.buildLogOverlay();
+    const overlay = this.logOverlay;
+    const textarea = this.logOverlayTextarea;
+    const payload = log
+      ? {
+          request: log.rawRequest ?? null,
+          response: log.rawResponse ?? null
+        }
+      : { message: "No request/response recorded." };
+    textarea.value = JSON.stringify(payload, null, 2);
+    overlay.style.display = "flex";
+    textarea.focus();
+  }
+
   async callLLM(model, prompt, signal) {
     if (model.provider === "claude") {
       return this.callClaude(model, prompt, signal);
@@ -1981,25 +2074,28 @@ class AiNotebookApp {
     );
     const url = `${baseUrl}/chat/completions`;
 
+    const requestBody = {
+      model: model.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an AI assistant inside a local notebook app. " +
+            "Return concise answers in Markdown."
+        },
+        { role: "user", content: prompt }
+      ]
+    };
+    const requestHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${model.apiKey}`
+    };
+
     const res = await fetch(url, {
       method: "POST",
       signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${model.apiKey}`
-      },
-      body: JSON.stringify({
-        model: model.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an AI assistant inside a local notebook app. " +
-              "Return concise answers in Markdown."
-          },
-          { role: "user", content: prompt }
-        ]
-      })
+      headers: requestHeaders,
+      body: JSON.stringify(requestBody)
     });
 
     if (!res.ok) {
@@ -2012,9 +2108,24 @@ class AiNotebookApp {
       json.choices?.[0]?.message?.content ||
       json.choices?.[0]?.text ||
       "";
+    const resHeaders = {};
+    res.headers.forEach((v, k) => {
+      resHeaders[k] = v;
+    });
     return {
       text: String(content).trim(),
-      usage: json.usage || {}
+      usage: json.usage || {},
+      rawRequest: {
+        url,
+        method: "POST",
+        headers: this.sanitizeHeaders(requestHeaders),
+        body: requestBody
+      },
+      rawResponse: {
+        status: res.status,
+        headers: resHeaders,
+        body: json
+      }
     };
   }
 
@@ -2025,20 +2136,23 @@ class AiNotebookApp {
     );
     const url = `${baseUrl}/messages`;
 
+    const requestBody = {
+      model: model.model,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }]
+    };
+    const requestHeaders = {
+      "Content-Type": "application/json",
+      "x-api-key": model.apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    };
+
     const res = await fetch(url, {
       method: "POST",
       signal,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": model.apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({
-        model: model.model,
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }]
-      })
+      headers: requestHeaders,
+      body: JSON.stringify(requestBody)
     });
 
     if (!res.ok) {
@@ -2050,9 +2164,22 @@ class AiNotebookApp {
     const contentArray = json.content || [];
     const firstText = contentArray.find((c) => c.type === "text");
     const content = firstText?.text || "";
+    const resHeaders = {};
+    res.headers.forEach((v, k) => (resHeaders[k] = v));
     return {
       text: String(content).trim(),
-      usage: json.usage || {}
+      usage: json.usage || {},
+      rawRequest: {
+        url,
+        method: "POST",
+        headers: this.sanitizeHeaders(requestHeaders),
+        body: requestBody
+      },
+      rawResponse: {
+        status: res.status,
+        headers: resHeaders,
+        body: json
+      }
     };
   }
 
@@ -2063,28 +2190,29 @@ class AiNotebookApp {
     );
     const url = `${baseUrl}/chat/completions`;
 
-    const headers = {
+    const requestHeaders = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${model.apiKey}`
       // Optionally: 'HTTP-Referer' and 'X-Title' can be added here.
+    };
+    const requestBody = {
+      model: model.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an AI assistant inside a local notebook app. " +
+            "Return concise answers in Markdown."
+        },
+        { role: "user", content: prompt }
+      ]
     };
 
     const res = await fetch(url, {
       method: "POST",
       signal,
-      headers,
-      body: JSON.stringify({
-        model: model.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an AI assistant inside a local notebook app. " +
-              "Return concise answers in Markdown."
-          },
-          { role: "user", content: prompt }
-        ]
-      })
+      headers: requestHeaders,
+      body: JSON.stringify(requestBody)
     });
 
     if (!res.ok) {
@@ -2097,9 +2225,22 @@ class AiNotebookApp {
       json.choices?.[0]?.message?.content ||
       json.choices?.[0]?.text ||
       "";
+    const resHeaders = {};
+    res.headers.forEach((v, k) => (resHeaders[k] = v));
     return {
       text: String(content).trim(),
-      usage: json.usage || {}
+      usage: json.usage || {},
+      rawRequest: {
+        url,
+        method: "POST",
+        headers: this.sanitizeHeaders(requestHeaders),
+        body: requestBody
+      },
+      rawResponse: {
+        status: res.status,
+        headers: resHeaders,
+        body: json
+      }
     };
   }
 }
