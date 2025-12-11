@@ -495,6 +495,10 @@
   position: relative;
 }
 
+.cell-output.collapsed {
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
+}
+
 .cell-output.cell-output-markdown {
   font-size: 14px;
   line-height: 1.6;
@@ -551,6 +555,25 @@
 
 .output-insert-btn:hover {
   background: rgba(148, 163, 184, 0.28);
+}
+
+.output-expand-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border: 1px solid var(--nb-border);
+  background: var(--nb-panel);
+  color: var(--nb-text);
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+.output-expand-btn:hover {
+  background: rgba(148, 163, 184, 0.16);
 }
 
 .llm-log-overlay {

@@ -4,6 +4,7 @@ import MarkdownIt from "https://esm.sh/markdown-it@13.0.1";
 
 const STORAGE_KEY = "app-ainotebook-v1";
 const LLM_SETTINGS_KEY = "ainotebook-llm-settings-v1";
+const OUTPUT_COLLAPSE_MAX_HEIGHT = 250;
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are an AI assistant inside a local notebook app. Return concise answers in Markdown.";
@@ -20,7 +21,7 @@ const DEFAULT_NOTEBOOK = {
       modelId: "",
       lastOutput: "",
       error: "",
-      stale: false
+      _stale: false
     },
     {
       id: "cell_summary",
@@ -30,10 +31,11 @@ const DEFAULT_NOTEBOOK = {
         "Summarize the notes from {{notes}} in 3 bullet points. " +
         "Respond in Markdown.",
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      _outputExpanded: false,
       modelId: "",
       lastOutput: "",
       error: "",
-      stale: false
+      _stale: false
     }
   ]
 };
@@ -230,6 +232,23 @@ class AiNotebookApp {
 
   onNotebookUpdate(item) {
     if (!item) return;
+    // Normalize legacy fields into local-only flags
+    if (Array.isArray(item.cells)) {
+      item.cells = item.cells.map((c) => ({
+        ...c,
+        _stale: c._stale ?? c.stale ?? false,
+        _outputExpanded: c._outputExpanded ?? c.outputExpanded ?? false,
+        lastRunInfo: c.lastRunInfo
+          ? {
+              ...c.lastRunInfo,
+              _rawRequest:
+                c.lastRunInfo._rawRequest ?? c.lastRunInfo.rawRequest ?? null,
+              _rawResponse:
+                c.lastRunInfo._rawResponse ?? c.lastRunInfo.rawResponse ?? null
+            }
+          : c.lastRunInfo
+      }));
+    }
     this.currentNotebook = item;
     this.renderNotebook();
   }
@@ -674,10 +693,11 @@ class AiNotebookApp {
           ? ""
           : `Explain {{md_${index - 1} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
+      _outputExpanded: false,
       modelId: "",
       lastOutput: "",
       error: "",
-      stale: false
+      _stale: false
     };
 
     cells.push(cell);
@@ -788,11 +808,11 @@ class AiNotebookApp {
 
     const next = (Array.isArray(newCells) ? newCells : []).map((c) => ({
       ...c,
-      stale: !!c.stale
+      _stale: !!c._stale
     }));
     const prevList = (Array.isArray(prevCells) ? prevCells : []).map((c) => ({
       ...c,
-      stale: !!c.stale
+      _stale: !!c._stale
     }));
 
     const refPrev = this.buildReferenceIndex(prevList);
@@ -800,7 +820,7 @@ class AiNotebookApp {
 
     // Reset stale flags; we'll recompute.
     next.forEach((c) => {
-      c.stale = false;
+      c._stale = false;
     });
 
     const staleSeeds = new Set();
@@ -819,10 +839,10 @@ class AiNotebookApp {
       const cell = next.find((c) => c.id === id);
       if (!cell) return;
       if (reason === "output") {
-        cell.stale = false;
+        cell._stale = false;
         pushQueue(id, false); // refreshed, do not stale downstream
       } else if (cell.type === "prompt") {
-        cell.stale = true;
+        cell._stale = true;
         staleSeeds.add(cell.id);
         pushQueue(id, true);
       } else {
@@ -834,13 +854,13 @@ class AiNotebookApp {
     // Persisted stale prompts (not refreshed this cycle) remain stale sources
     prevList.forEach((cell) => {
       if (
-        cell.stale &&
+        cell._stale &&
         cell.type === "prompt" &&
         !(reason === "output" && changedIds.has(cell.id))
       ) {
         const cur = next.find((c) => c.id === cell.id);
         if (cur) {
-          cur.stale = true;
+          cur._stale = true;
           staleSeeds.add(cur.id);
           pushQueue(cur.id, true);
         }
@@ -871,7 +891,7 @@ class AiNotebookApp {
     // Apply final staleness state
     return next.map((c) => ({
       ...c,
-      stale: staleClosure.has(c.id)
+      _stale: staleClosure.has(c.id)
     }));
   }
 
@@ -1075,7 +1095,7 @@ class AiNotebookApp {
       } else if (cell.error) {
         statusSpan.classList.add("error");
         statusSpan.textContent = "Error";
-      } else if (cell.stale) {
+      } else if (cell._stale) {
         statusSpan.classList.add("stale");
         statusSpan.textContent = "Stale";
       } else if (cell.lastOutput && cell.type === "prompt") {
@@ -1094,7 +1114,7 @@ class AiNotebookApp {
         runBtn.type = "button";
         runBtn.className = "cell-action-btn run-btn";
         runBtn.textContent = "▶";
-        const isStale = !!cell.stale || !cell.lastOutput;
+        const isStale = !!cell._stale || !cell.lastOutput;
         runBtn.disabled = isRunning;
         runBtn.classList.toggle("is-stale", isStale && !isRunning);
         runBtn.classList.toggle("is-running", isRunning);
@@ -1219,8 +1239,55 @@ class AiNotebookApp {
         });
         output.appendChild(insertBtn);
       }
-      if (cell.stale) {
+      if (cell._stale) {
         output.classList.add("stale");
+      }
+      if (cell.type === "prompt") {
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "output-expand-btn";
+        const expandedFlag = !!(cell._outputExpanded ?? cell.outputExpanded);
+        toggleBtn.textContent = expandedFlag ? "⇱" : "⇲";
+        toggleBtn.title = expandedFlag ? "Collapse output" : "Expand output";
+        toggleBtn.style.display = "none";
+
+        toggleBtn.addEventListener("click", () => {
+          const expanded = !!(cell._outputExpanded ?? cell.outputExpanded);
+          this.updateCells(
+            (cells) =>
+              cells.map((c) =>
+                c.id === cell.id ? { ...c, _outputExpanded: !expanded } : c
+              ),
+            { changedIds: [] }
+          );
+        });
+
+        const applyCollapseUi = () => {
+          const expanded = !!(cell._outputExpanded ?? cell.outputExpanded);
+          const isOverflow =
+            output.scrollHeight >
+            (OUTPUT_COLLAPSE_MAX_HEIGHT + 4);
+          if (!isOverflow) {
+            toggleBtn.style.display = "none";
+            output.classList.remove("collapsed");
+            output.style.maxHeight = "";
+            output.style.overflow = "";
+            return;
+          }
+          toggleBtn.textContent = expanded ? "⇱" : "⇲";
+          toggleBtn.title = expanded ? "Collapse output" : "Expand output";
+          toggleBtn.style.display = "inline-flex";
+          output.classList.toggle("collapsed", !expanded);
+          output.style.maxHeight = expanded
+            ? ""
+            : `${OUTPUT_COLLAPSE_MAX_HEIGHT}px`;
+          output.style.overflow = expanded ? "auto" : "hidden";
+          if (!output.contains(toggleBtn)) {
+            output.appendChild(toggleBtn);
+          }
+        };
+
+        requestAnimationFrame(applyCollapseUi);
       }
       if (cell.type === "prompt" && cell.lastRunInfo) {
         const meta = document.createElement("div");
@@ -1640,12 +1707,12 @@ class AiNotebookApp {
           ? result.usage
           : {};
       const rawRequest =
-        result && typeof result === "object" && result.rawRequest
-          ? result.rawRequest
+        result && typeof result === "object" && result._rawRequest
+          ? result._rawRequest
           : null;
       const rawResponse =
-        result && typeof result === "object" && result.rawResponse
-          ? result.rawResponse
+        result && typeof result === "object" && result._rawResponse
+          ? result._rawResponse
           : null;
       const durationMs = Date.now() - this.runningStartTimes.get(cellId);
       // Persist output & clear error
@@ -1677,8 +1744,8 @@ class AiNotebookApp {
                       model.model ||
                       model.id ||
                       "",
-                    rawRequest,
-                    rawResponse
+                    _rawRequest: rawRequest,
+                    _rawResponse: rawResponse
                   }
                 }
               : c
@@ -2139,8 +2206,8 @@ class AiNotebookApp {
     const textarea = this.logOverlayTextarea;
     const payload = log
       ? {
-          request: log.rawRequest ?? null,
-          response: log.rawResponse ?? null
+          request: log._rawRequest ?? null,
+          response: log._rawResponse ?? null
         }
       : { message: "No request/response recorded." };
     textarea.value = JSON.stringify(payload, null, 2);
@@ -2205,13 +2272,13 @@ class AiNotebookApp {
     return {
       text: String(content).trim(),
       usage: json.usage || {},
-      rawRequest: {
+      _rawRequest: {
         url,
         method: "POST",
         headers: this.sanitizeHeaders(requestHeaders),
         body: requestBody
       },
-      rawResponse: {
+      _rawResponse: {
         status: res.status,
         headers: resHeaders,
         body: json
@@ -2260,13 +2327,13 @@ class AiNotebookApp {
     return {
       text: String(content).trim(),
       usage: json.usage || {},
-      rawRequest: {
+      _rawRequest: {
         url,
         method: "POST",
         headers: this.sanitizeHeaders(requestHeaders),
         body: requestBody
       },
-      rawResponse: {
+      _rawResponse: {
         status: res.status,
         headers: resHeaders,
         body: json
@@ -2319,13 +2386,13 @@ class AiNotebookApp {
     return {
       text: String(content).trim(),
       usage: json.usage || {},
-      rawRequest: {
+      _rawRequest: {
         url,
         method: "POST",
         headers: this.sanitizeHeaders(requestHeaders),
         body: requestBody
       },
-      rawResponse: {
+      _rawResponse: {
         status: res.status,
         headers: resHeaders,
         body: json
