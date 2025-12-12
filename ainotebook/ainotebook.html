@@ -103,6 +103,21 @@
         </section>
 
         <section class="settings-section">
+          <h3>Environment Variables</h3>
+          <p class="settings-hint">
+            Define local secrets or variables as key=value pairs. <br>
+            Reference them in cells as <code>{{ ENV["MY_KEY"] }}</code>.
+          </p>
+          <textarea
+            id="envTextarea"
+            class="model-params-textarea"
+            placeholder="API_KEY=123&#10;SECRET=abc"
+            rows="5"
+            style="width: 100%; font-family: monospace;"
+          ></textarea>
+        </section>
+
+        <section class="settings-section">
           <h3>Tips</h3>
           <ul class="settings-tips">
             <li>

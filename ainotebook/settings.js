@@ -8,6 +8,7 @@ export class SettingsDialog {
     this.addLlmBtn = document.getElementById("addLlmBtn");
     this.refreshModelsBtn = document.getElementById("refreshModelsBtn");
     this.modelCacheStatus = document.getElementById("modelCacheStatus");
+    this.envTextarea = document.getElementById("envTextarea");
     this.closeBtn = document.getElementById("settingsCloseBtn");
     this.cancelBtn = document.getElementById("settingsCancelBtn");
 
@@ -46,6 +47,13 @@ export class SettingsDialog {
   render() {
     this.llmListEl.innerHTML = "";
     const providers = this.llmManager.settings.providers;
+    
+    if (this.envTextarea) {
+      const env = this.llmManager.settings.env || {};
+      this.envTextarea.value = Object.entries(env)
+        .map(([k, v]) => `${k}=${v}`)
+        .join("\n");
+    }
 
     if (!providers.length) {
       // Add one empty row to start with
@@ -143,6 +151,23 @@ export class SettingsDialog {
   saveFromDialog() {
     const providers = this.collectProviders();
     this.llmManager.settings.providers = providers;
+    
+    if (this.envTextarea) {
+      const envLines = this.envTextarea.value.split("\n");
+      const env = {};
+      envLines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) return;
+        const idx = trimmed.indexOf("=");
+        if (idx > 0) {
+          const key = trimmed.slice(0, idx).trim();
+          const val = trimmed.slice(idx + 1).trim();
+          if (key) env[key] = val;
+        }
+      });
+      this.llmManager.settings.env = env;
+    }
+
     // Drop cached models that no longer have a provider backing them
     this.llmManager.settings.cachedModels = (
       this.llmManager.settings.cachedModels || []

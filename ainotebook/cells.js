@@ -638,10 +638,18 @@ export class CellRenderer {
 
     // Listeners
     nameInput.addEventListener("input", (e) => {
+      const val = e.target.value;
+      if (val.trim().toUpperCase() === "ENV") {
+        e.target.setCustomValidity("Cell name cannot be 'ENV'");
+        e.target.reportValidity();
+        return;
+      }
+      e.target.setCustomValidity("");
+      
       this.app.cellManager.updateCells(
         (cells) => {
           const next = cells.map((c) =>
-            c.id === cell.id ? { ...c, name: e.target.value } : c
+            c.id === cell.id ? { ...c, name: val } : c
           );
           return next;
         },

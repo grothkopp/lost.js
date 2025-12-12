@@ -70,7 +70,8 @@ export class LlmManager {
         ...DEFAULT_LLM_SETTINGS,
         providers,
         cachedModels: normalizedCachedModels,
-        cacheTimestamp
+        cacheTimestamp,
+        env
       };
     } catch {
       return { ...DEFAULT_LLM_SETTINGS };

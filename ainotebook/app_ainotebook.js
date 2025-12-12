@@ -74,7 +74,10 @@ class AiNotebookApp {
     
     // Core Managers
     this.parsedOutputs = new Map(); // key -> parsed JSON value
-    this.templateManager = new TemplateManager(() => this.parsedOutputs);
+    this.templateManager = new TemplateManager(
+      () => this.parsedOutputs,
+      () => this.llmManager.settings.env
+    );
     
     this.cellManager = new CellManager(this, this.lost);
     this.codeCellManager = new CodeCellManager(this, (fn, opts) => this.cellManager.updateCells(fn, opts));

@@ -1,8 +1,9 @@
 
 export class TemplateManager {
-  constructor(getParsedOutputs) {
+  constructor(getParsedOutputs, getEnv) {
     // getParsedOutputs is a function that returns the Map of parsed outputs
     this.getParsedOutputs = getParsedOutputs;
+    this.getEnv = getEnv || (() => ({}));
   }
 
   getCellKeys(cell, index) {
@@ -39,26 +40,33 @@ export class TemplateManager {
     const { base, path } = this.parseKeyPath(expr);
     if (!base) return "";
 
-    // Find the cell directly from the fresh cells array
-    let cell = null;
-    const cellIndexMatch = base.match(/^#(\d+)$/) || base.match(/^out(\d+)$/);
-    if (cellIndexMatch) {
-      const idx = parseInt(cellIndexMatch[1], 10) - 1;
-      cell = cells[idx];
+    let current = null;
+
+    if (base === "ENV") {
+      current = this.getEnv();
     } else {
-      cell = cells.find((c) => c.id === base || c.name === base);
-    }
+      // Find the cell directly from the fresh cells array
+      let cell = null;
+      const cellIndexMatch = base.match(/^#(\d+)$/) || base.match(/^out(\d+)$/);
+      if (cellIndexMatch) {
+        const idx = parseInt(cellIndexMatch[1], 10) - 1;
+        cell = cells[idx];
+      } else {
+        cell = cells.find((c) => c.id === base || c.name === base);
+      }
 
-    if (!cell) return "";
-
-    let current = this.getCellValue(cell);
-
-    // If we have a path or the value looks like JSON, try to parse it
-    if (typeof current === "string" && (path.length > 0 || /^\s*[\[\{]/.test(current))) {
-      try {
-        current = JSON.parse(current);
-      } catch (e) {
-        // Ignore parse error, treat as string
+      if (cell) {
+        current = this.getCellValue(cell);
+        // If we have a path or the value looks like JSON, try to parse it
+        if (typeof current === "string" && (path.length > 0 || /^\s*[\[\{]/.test(current))) {
+          try {
+            current = JSON.parse(current);
+          } catch (e) {
+            // Ignore parse error, treat as string
+          }
+        }
+      } else {
+        return "";
       }
     }
 
