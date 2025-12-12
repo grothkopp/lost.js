@@ -106,10 +106,6 @@
           <h3>Tips</h3>
           <ul class="settings-tips">
             <li>
-              Give each LLM a short label (e.g. <code>GPT-4o</code>,
-              <code>Claude 3.5</code>).
-            </li>
-            <li>
               Each prompt cell can override the notebook’s default LLM, or you
               can leave it as “Use notebook default”.
             </li>
@@ -122,6 +118,9 @@
         </section>
       </div>
       <div class="dialog-footer">
+        <button type="button" id="settingsCancelBtn" class="btn btn-secondary">
+          Cancel
+        </button>
         <button type="submit" id="settingsCloseBtn" class="btn btn-primary">
           Save &amp; Close
         </button>

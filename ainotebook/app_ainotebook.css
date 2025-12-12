@@ -183,7 +183,7 @@
 .model-picker-pill {
   min-width: 180px;
   justify-content: center;
-  color: #36383b;
+  color: var(--nb-text);
   border: 1px solid rgba(128, 128, 128, 0.6);
 }
 
@@ -247,6 +247,7 @@
   overflow: hidden;
   border-left-width: 5px;
   border-left-style: solid;
+  max-width: 980px;
 }
 
 .cell-header {
@@ -602,6 +603,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   position: relative;
+  overflow-y: scroll;
 }
 
 .cell-output.collapsed {

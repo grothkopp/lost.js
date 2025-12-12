@@ -145,6 +145,7 @@ class AiNotebookApp {
       document.getElementById("modelSearchNotebookInput");
 
     this.settingsCloseBtn = document.getElementById("settingsCloseBtn");
+    this.settingsCancelBtn = document.getElementById("settingsCancelBtn");
     this.runAllBtn = document.getElementById("runAllBtn");
     this.stopAllBtn = document.getElementById("stopAllBtn");
 
@@ -255,6 +256,9 @@ class AiNotebookApp {
     }
     this.settingsCloseBtn?.addEventListener("click", () => {
       this.saveLlmSettingsFromDialog();
+      this.settingsDialog?.close();
+    });
+    this.settingsCancelBtn?.addEventListener("click", () => {
       this.settingsDialog?.close();
     });
     if (this.notebookModelSearch) {
@@ -1521,7 +1525,11 @@ class AiNotebookApp {
       } else {
         output.textContent = outputText;
       }
-      if (cell.type === "markdown" || cell.type === "variable") {
+      if (
+        cell.type === "markdown" ||
+        cell.type === "variable" ||
+        (cell.type === "prompt" && !parsed.isJson)
+      ) {
         const insertBtn = document.createElement("button");
         insertBtn.type = "button";
         insertBtn.className = "output-insert-btn";
