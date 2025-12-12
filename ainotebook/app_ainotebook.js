@@ -43,7 +43,7 @@ const DEFAULT_NOTEBOOK = {
       name: "summary",
       text:
         "Summarize the notes from {{notes}} in 3 bullet points. " +
-        "Respond in Markdown.",
+        "Respond with a JSON Array like [\"point 1\", \"point 2\", \"point 3\"].",
       systemPrompt: "{{ var_systemprompt }}",
       params: "",
       _outputExpanded: false,
@@ -51,6 +51,17 @@ const DEFAULT_NOTEBOOK = {
       lastOutput: "",
       error: "",
       _stale: false
+    },
+    {
+      id: "cell_format",
+      type: "code",
+      name: "formatted",
+      text: "const items = {{summary}};\nreturn items.map(i => \"- \" + i).join(\"\\n\");",
+      modelId: "",
+      lastOutput: "",
+      error: "",
+      _stale: false,
+      autorun: true
     }
   ]
 };

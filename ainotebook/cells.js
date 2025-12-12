@@ -89,7 +89,7 @@ export class CellManager {
           : type === "variable"
           ? ""
           : type === "code"
-          ? "// JavaScript code runs in a sandbox.\n// Template other cells with {{name}}. Quote strings yourself, e.g. const notes = \"{{notes}}\";\n// Return a value or assign to `output`.\nreturn \"Hello \" + \"{{notes}}\";"
+          ? "// JavaScript code runs in a sandbox.\n// Template other cells with {{ <name> }}. Quote strings yourself, e.g. const notes = \"{{ <name> }}\";\n// Return a value or assign to `output`.\nreturn \"Hello \" + \`{{notes}}\`;"
           : `Explain {{md_${Math.max(1, insertIndex)} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
       params: "",

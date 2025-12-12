@@ -1,5 +1,5 @@
 import { DEFAULT_SYSTEM_PROMPT } from "./llm.js";
-import { formatDuration } from "./utils.js";
+import { formatDuration, cleanJsonMarkdown } from "./utils.js";
 
 export class PromptCellManager {
   /**
@@ -146,6 +146,7 @@ export class PromptCellManager {
         result && typeof result === "object" && "text" in result
           ? result.text
           : result;
+      const cleanedOutput = cleanJsonMarkdown(output || "");
       const usage =
         result && typeof result === "object" && result.usage
           ? result.usage
@@ -166,7 +167,7 @@ export class PromptCellManager {
             c.id === cellId
               ? {
                   ...c,
-                  lastOutput: output || "",
+                  lastOutput: cleanedOutput,
                   error: "",
                   lastRunInfo: {
                     tokensIn:
@@ -216,7 +217,7 @@ export class PromptCellManager {
                   }
                 : c
             ),
-          { changedIds: [cellId] }
+          { changedIds: [cellId], reason: "output" }
         );
         alert("LLM error: " + msg);
       }

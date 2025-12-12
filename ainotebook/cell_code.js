@@ -123,7 +123,7 @@ export class CodeCellManager {
                 }
               : c
           ),
-        { changedIds: [cellId] }
+        { changedIds: [cellId], reason: "output" }
       );
       return;
     }
@@ -239,7 +239,7 @@ export class CodeCellManager {
             cells.map((c) =>
               c.id === cellId ? { ...c, error: msg } : c
             ),
-          { changedIds: [cellId] }
+          { changedIds: [cellId], reason: "output" }
         );
         resolve({ type: "code-error", error: msg });
       }

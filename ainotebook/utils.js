@@ -61,12 +61,12 @@ export function escapeHtml(str) {
 }
 
 /**
- * Tries to parse a string as JSON, stripping markdown code blocks if present.
- * @param {string} text - The input string.
- * @returns {Object} { isJson: boolean, value: any }.
+ * Removes markdown code block formatting for JSON (```json ... ```).
+ * @param {string} text - The input text.
+ * @returns {string} The cleaned text.
  */
-export function parseJsonOutput(text) {
-  if (typeof text !== "string") return { isJson: false, value: text };
+export function cleanJsonMarkdown(text) {
+  if (typeof text !== "string") return text;
   let cleaned = text.trim();
   if (/^```json/i.test(cleaned)) {
     cleaned = cleaned.replace(/^```json\s*/i, "");
@@ -75,6 +75,18 @@ export function parseJsonOutput(text) {
     }
     cleaned = cleaned.trim();
   }
+  return cleaned;
+}
+
+/**
+ * Tries to parse a string as JSON, stripping markdown code blocks if present.
+ * @param {string} text - The input string.
+ * @returns {Object} { isJson: boolean, value: any }.
+ */
+export function parseJsonOutput(text) {
+  if (typeof text !== "string") return { isJson: false, value: text };
+  let cleaned = cleanJsonMarkdown(text);
+
   if (
     (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
     (cleaned.startsWith("'") && cleaned.endsWith("'"))
