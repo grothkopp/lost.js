@@ -12,12 +12,21 @@ export const DEFAULT_LLM_SETTINGS = {
 export const LLM_SETTINGS_KEY = "ainotebook-llm-settings-v1";
 
 export class LlmManager {
+  /**
+   * Manages LLM providers, models, settings, and API calls.
+   * Handles caching of models and execution of completion requests.
+   */
   constructor() {
     this.settings = this.loadSettings();
     this.refreshModelsInFlight = false;
     this.modelCacheStatus = null; // Element to update status
   }
 
+  /**
+   * Loads settings from localStorage.
+   * Migrates legacy formats and normalizes data structure.
+   * @returns {Object} The settings object.
+   */
   loadSettings() {
     try {
       const raw = localStorage.getItem(LLM_SETTINGS_KEY);
@@ -82,6 +91,9 @@ export class LlmManager {
     }
   }
 
+  /**
+   * Saves current settings to localStorage.
+   */
   saveSettings() {
     try {
       localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(this.settings));
@@ -90,6 +102,11 @@ export class LlmManager {
     }
   }
 
+  /**
+   * Gets the default base URL for a given provider.
+   * @param {string} provider - The provider ID (openai, claude, openrouter).
+   * @returns {string} The default API base URL.
+   */
   getProviderDefaultBaseUrl(provider) {
     if (provider === "claude") return "https://api.anthropic.com/v1";
     if (provider === "openrouter") return "https://openrouter.ai/api/v1";
@@ -97,6 +114,11 @@ export class LlmManager {
     return "https://api.openai.com/v1";
   }
 
+  /**
+   * Gets the display label for a provider.
+   * @param {string} provider - The provider ID.
+   * @returns {string} Display label.
+   */
   getProviderLabel(provider) {
     if (provider === "claude") return "Anthropic";
     if (provider === "openrouter") return "OpenRouter";
@@ -104,6 +126,11 @@ export class LlmManager {
     return "OpenAI";
   }
 
+  /**
+   * Formats a model object for display in dropdowns.
+   * @param {Object} model - The model object.
+   * @returns {string} Formatted string "Provider/ModelName".
+   */
   formatModelDisplay(model) {
     if (!model) return "";
     const providerName = this.getProviderLabel(model.provider);
@@ -111,11 +138,21 @@ export class LlmManager {
     return `${providerName}/${modelName}`;
   }
 
+  /**
+   * Retrieves a cached model by its unique ID.
+   * @param {string} id - The model ID.
+   * @returns {Object|null} The model object or null.
+   */
   getModelById(id) {
     if (!id) return null;
     return (this.settings.cachedModels || []).find((m) => m.id === id) || null;
   }
 
+  /**
+   * Gets the display label for a model ID.
+   * @param {string} id - The model ID.
+   * @returns {string} The formatted label.
+   */
   getModelLabelById(id) {
     if (!id) return "";
     const m = this.getModelById(id);
@@ -123,6 +160,11 @@ export class LlmManager {
     return this.formatModelDisplay(m);
   }
 
+  /**
+   * Hydrates a model object with its provider's current configuration (API key, base URL).
+   * @param {string} id - The model ID.
+   * @returns {Object|null} The hydrated model object or null.
+   */
   getModelWithProvider(id) {
     const model = this.getModelById(id);
     if (!model) return null;
@@ -143,6 +185,11 @@ export class LlmManager {
     };
   }
 
+  /**
+   * Filters cached models based on a search term.
+   * @param {string} searchTerm - The search string.
+   * @returns {Array} Filtered list of models.
+   */
   getFilteredModels(searchTerm = "") {
     const term = (searchTerm || "").trim().toLowerCase();
     const models = Array.isArray(this.settings.cachedModels)
@@ -166,6 +213,11 @@ export class LlmManager {
     this.modelCacheStatus.dataset.type = type;
   }
 
+  /**
+   * Refreshes the list of available models from all configured providers.
+   * Updates the cache and status UI.
+   * @param {Array} providersFromDialog - Optional updated provider list from settings dialog.
+   */
   async refreshModelCache(providersFromDialog = null) {
     if (providersFromDialog) {
       this.settings.providers = providersFromDialog;
@@ -229,6 +281,11 @@ export class LlmManager {
     this.refreshModelsInFlight = false;
   }
 
+  /**
+   * Fetches models for a single provider.
+   * @param {Object} provider - The provider configuration object.
+   * @returns {Promise<Array>} List of models.
+   */
   async fetchModelsForProvider(provider) {
     const baseUrl = (
       provider.baseUrl || this.getProviderDefaultBaseUrl(provider.provider)
@@ -294,6 +351,15 @@ export class LlmManager {
       .map((id) => ({ model: id }));
   }
 
+  /**
+   * Routes an LLM call to the appropriate provider implementation.
+   * @param {Object} model - The model configuration.
+   * @param {string} prompt - The user prompt.
+   * @param {string} systemPrompt - The system prompt.
+   * @param {AbortSignal} signal - Abort signal for cancellation.
+   * @param {Object} params - Additional parameters (temperature, etc.).
+   * @returns {Promise<Object>} The LLM response.
+   */
   async callLLM(model, prompt, systemPrompt, signal, params = {}) {
     if (model.provider === "claude") {
       return this.callClaude(model, prompt, systemPrompt, signal, params);

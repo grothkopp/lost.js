@@ -2,6 +2,12 @@ import { DEFAULT_SYSTEM_PROMPT } from "./llm.js";
 import { formatDuration } from "./utils.js";
 
 export class PromptCellManager {
+  /**
+   * Manages execution of prompt (LLM) cells.
+   * Handles running, stopping, parameter parsing, and timing.
+   * @param {Object} app - The main AiNotebookApp instance.
+   * @param {Function} updateCells - Callback to update cell state.
+   */
   constructor(app, updateCells) {
     this.app = app;
     this.updateCells = updateCells;
@@ -13,6 +19,12 @@ export class PromptCellManager {
     this.runAllInFlight = false;
   }
 
+  /**
+   * Parses parameter string (key=value lines) into an object.
+   * Supports numbers and booleans.
+   * @param {string} str - The parameter string.
+   * @returns {Object} Key-value pairs.
+   */
   parseParams(str) {
     if (!str || !str.trim()) return {};
     const params = {};
@@ -31,11 +43,17 @@ export class PromptCellManager {
     return params;
   }
 
+  /**
+   * Starts the interval loop to update running timers in the UI.
+   */
   startRunningTimerLoop() {
     if (this.runningTimerId) return;
     this.runningTimerId = setInterval(() => this.updateRunningTimerDom(), 1000);
   }
 
+  /**
+   * Stops the running timer loop.
+   */
   stopRunningTimerLoop() {
     if (this.runningTimerId) {
       clearInterval(this.runningTimerId);
@@ -43,6 +61,9 @@ export class PromptCellManager {
     }
   }
 
+  /**
+   * Updates the DOM elements for running timers.
+   */
   updateRunningTimerDom() {
     const now = Date.now();
     this.runningStartTimes.forEach((start, cellId) => {
@@ -58,6 +79,11 @@ export class PromptCellManager {
     }
   }
 
+  /**
+   * Executes a prompt cell.
+   * Resolves templates, calls LLM manager, and handles result/error.
+   * @param {string} cellId - The ID of the cell to run.
+   */
   async runPromptCell(cellId) {
     const item = this.app.lost.getCurrent();
     if (!item) return;
@@ -206,6 +232,10 @@ export class PromptCellManager {
     }
   }
 
+  /**
+   * Stops a running prompt cell by aborting the controller.
+   * @param {string} cellId - The cell ID to stop.
+   */
   stopCell(cellId) {
     const controller = this.runningControllers.get(cellId);
     if (controller) {
@@ -220,6 +250,9 @@ export class PromptCellManager {
     this.app.cellRenderer.updateStaleStatus(cells);
   }
 
+  /**
+   * Sequentially runs all prompt and code cells in the notebook.
+   */
   async runAllCells() {
     const item = this.app.lost.getCurrent();
     if (!item) return;
@@ -244,6 +277,9 @@ export class PromptCellManager {
     this.app.renderNotebook();
   }
 
+  /**
+   * Stops all currently running cells and aborts run-all sequence.
+   */
   stopAllCells() {
     this.stopAllRequested = true;
     this.runningControllers.forEach((controller) => controller.abort());

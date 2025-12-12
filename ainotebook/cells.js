@@ -11,11 +11,20 @@ import { DEFAULT_SYSTEM_PROMPT } from "./llm.js";
 const OUTPUT_COLLAPSE_MAX_HEIGHT = 250;
 
 export class CellManager {
+  /**
+   * Manages cell state and operations (add, remove, update, stale propagation).
+   * @param {Object} app - The main AiNotebookApp instance.
+   * @param {Object} lost - The LOST instance for state management.
+   */
   constructor(app, lost) {
     this.app = app;
     this.lost = lost;
   }
 
+  /**
+   * Adds a new cell of the specified type to the end of the notebook.
+   * @param {string} type - The type of cell to add (markdown, prompt, variable, code).
+   */
   addCell(type) {
     const item = this.lost.getCurrent();
     if (!item) return;
@@ -54,6 +63,11 @@ export class CellManager {
     this.lost.update(item.id, { cells });
   }
 
+  /**
+   * Adds a new cell of the specified type at a specific index.
+   * @param {string} type - The type of cell to add.
+   * @param {number} index - The index to insert the cell at.
+   */
   addCellAt(type, index) {
     const item = this.lost.getCurrent();
     if (!item) return;
@@ -90,6 +104,11 @@ export class CellManager {
     this.lost.update(item.id, { cells });
   }
 
+  /**
+   * Updates cells using a transform function and handles side effects (staleness, autorun).
+   * @param {Function} transformFn - Function that takes current cells and returns new cells.
+   * @param {Object} options - Options for the update (changedIds, reason).
+   */
   updateCells(transformFn, options = {}) {
     // Invalidate output cache for changed cells if output changed, forcing a re-render of the output content
     if (options.reason === "output" && options.changedIds && this.app.cellRenderer) {
@@ -136,6 +155,13 @@ export class CellManager {
     this.app.cellRenderer.updateStaleStatus(finalCells);
   }
 
+  /**
+   * Calculates and applies staleness to cells based on dependency graph.
+   * @param {Array} prevCells - The previous state of cells.
+   * @param {Array} newCells - The new state of cells.
+   * @param {Object} options - Update options (changedIds, reason).
+   * @returns {Array} The cells with updated staleness flags.
+   */
   applyStaleness(prevCells, newCells, options = {}) {
     const changedIds = new Set(options.changedIds || []);
     const reason = options.reason || "content";
@@ -233,6 +259,10 @@ export class CellManager {
 }
 
 export class CellRenderer {
+  /**
+   * Handles the DOM rendering of notebook cells.
+   * @param {Object} app - The main AiNotebookApp instance.
+   */
   constructor(app) {
     this.app = app;
     this.templateHoverCache = new WeakMap();
@@ -244,16 +274,16 @@ export class CellRenderer {
     return this.app.cellsContainer;
   }
 
+  /**
+   * Renders all cells into the container.
+   * Clears parsed outputs map before rendering.
+   */
   render() {
     if (!this.container) return;
     const item = this.app.currentNotebook;
     const cells = Array.isArray(item.cells) ? item.cells : [];
     
-    // We assume parsedOutputs are populated or will be populated. 
-    // In the old code app.parsedOutputs was cleared before render.
-    // Here we should probably clear it if it's managed by app.
-    // The TemplateManager uses a getter for parsedOutputs. 
-    // If the app holds the state, we are good.
+    // Clear parsed outputs map before rendering fresh content
     this.app.parsedOutputs.clear();
 
     this.container.innerHTML = "";
@@ -267,6 +297,10 @@ export class CellRenderer {
     }
   }
 
+  /**
+   * Updates the visual status of cells (stale, running, error) without full re-render.
+   * @param {Array} cells - The current list of cells.
+   */
   updateStaleStatus(cells) {
     if (!this.container) return;
     cells.forEach((cell, index) => {
@@ -378,6 +412,12 @@ export class CellRenderer {
     });
   }
 
+  /**
+   * Renders a single cell.
+   * @param {Object} cell - The cell object.
+   * @param {number} index - The cell index.
+   * @param {Array} cells - All cells (for context).
+   */
   renderCell(cell, index, cells) {
     const root = document.createElement("article");
     const typeClass = cell.type ? `type-${cell.type}` : "type-markdown";
@@ -413,6 +453,13 @@ export class CellRenderer {
     if (textarea) this.applyHeight(textarea, "collapsed");
   }
 
+  /**
+   * Renders the header of a cell (title, type, actions).
+   * @param {Object} cell - The cell object.
+   * @param {number} index - The cell index.
+   * @param {string} typeClass - CSS class for cell type.
+   * @returns {HTMLElement} The header element.
+   */
   renderHeader(cell, index, typeClass) {
     const header = document.createElement("header");
     header.className = "cell-header";
@@ -719,6 +766,14 @@ export class CellRenderer {
     return header;
   }
 
+  /**
+   * Renders the body of a cell (inputs, outputs).
+   * @param {Object} cell - The cell object.
+   * @param {number} index - The cell index.
+   * @param {Array} cells - All cells.
+   * @param {string} baseRef - The reference name for this cell.
+   * @returns {HTMLElement} The body element.
+   */
   renderBody(cell, index, cells, baseRef) {
     const body = document.createElement("div");
     body.className = "cell-body";
@@ -907,6 +962,13 @@ export class CellRenderer {
     return body;
   }
 
+  /**
+   * Updates the cell output DOM element.
+   * @param {Object} cell - The cell object.
+   * @param {HTMLElement} output - The output container.
+   * @param {number} index - The cell index.
+   * @param {Array} cells - All cells.
+   */
   updateCellOutput(cell, output, index, cells) {
     const baseRef = this.app.getPreferredRef(cell, index);
     let outputText =
@@ -1016,6 +1078,10 @@ export class CellRenderer {
     requestAnimationFrame(applyCollapseUi);
   }
 
+  /**
+   * Renders the row of add buttons (Markdown, Prompt, etc.) after a cell.
+   * @param {number} index - The index to insert at.
+   */
   renderAddRow(index) {
     const addRow = document.createElement("div");
     addRow.className = "cell-add-row";
@@ -1190,6 +1256,11 @@ export class CellRenderer {
     return payload;
   }
 
+  /**
+   * Builds HTML for the mirrored overlay used in hover detection.
+   * @param {string} text - The textarea content.
+   * @returns {string} HTML string with spans for template refs.
+   */
   buildTextareaHoverHtml(text) {
     if (!text) return "";
     const parts = [];
@@ -1250,6 +1321,11 @@ export class CellRenderer {
     }
   }
 
+  /**
+   * Inserts a reference string into the last focused editor or active element.
+   * @param {string} ref - The reference string to insert.
+   * @param {Object} opts - Options (ensureVisible).
+   */
   insertReference(ref, opts = {}) {
     const { ensureVisible = false } = opts;
     const target =

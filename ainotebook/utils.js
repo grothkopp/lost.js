@@ -1,4 +1,9 @@
 
+/**
+ * Generates a unique ID with a prefix.
+ * @param {string} prefix - The ID prefix (default "cell").
+ * @returns {string} The unique ID.
+ */
 export function genId(prefix = "cell") {
   return (
     prefix +
@@ -9,6 +14,11 @@ export function genId(prefix = "cell") {
   );
 }
 
+/**
+ * Formats a duration in milliseconds to MM:SS.
+ * @param {number} ms - Duration in milliseconds.
+ * @returns {string} Formatted string.
+ */
 export function formatDuration(ms) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60)
@@ -18,6 +28,11 @@ export function formatDuration(ms) {
   return `${minutes}:${seconds}`;
 }
 
+/**
+ * Redacts sensitive headers from an object.
+ * @param {Object} headers - The headers object.
+ * @returns {Object} Sanitized headers.
+ */
 export function sanitizeHeaders(headers = {}) {
   const blocked = new Set(["authorization", "x-api-key"]);
   const out = {};
@@ -31,6 +46,11 @@ export function sanitizeHeaders(headers = {}) {
   return out;
 }
 
+/**
+ * Escapes HTML characters in a string.
+ * @param {string} str - The string to escape.
+ * @returns {string} Escaped string.
+ */
 export function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -40,6 +60,11 @@ export function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Tries to parse a string as JSON, stripping markdown code blocks if present.
+ * @param {string} text - The input string.
+ * @returns {Object} { isJson: boolean, value: any }.
+ */
 export function parseJsonOutput(text) {
   if (typeof text !== "string") return { isJson: false, value: text };
   let cleaned = text.trim();
@@ -64,6 +89,12 @@ export function parseJsonOutput(text) {
   }
 }
 
+/**
+ * Calculates the height for a collapsed textarea.
+ * @param {HTMLTextAreaElement} textarea - The textarea element.
+ * @param {number} lines - Number of lines to show (default 4).
+ * @returns {number} The calculated height in pixels.
+ */
 export function getCollapsedHeight(textarea, lines = 4) {
   const cs = getComputedStyle(textarea);
   const lineHeight =
@@ -77,6 +108,11 @@ export function getCollapsedHeight(textarea, lines = 4) {
   return Math.round(lineHeight * lines + paddingY + borderY);
 }
 
+/**
+ * Applies auto-resize height to a textarea based on content and mode.
+ * @param {HTMLTextAreaElement} textarea - The textarea element.
+ * @param {string} mode - 'collapsed' or 'expanded' (optional, auto-detects based on focus).
+ */
 export function applyTextareaHeight(textarea, mode = null) {
   if (!textarea) return;
   const desiredMode =

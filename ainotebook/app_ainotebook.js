@@ -56,6 +56,10 @@ const DEFAULT_NOTEBOOK = {
 };
 
 class AiNotebookApp {
+  /**
+   * Initializes the AI Notebook application.
+   * Sets up LOST framework, managers, UI components, and event listeners.
+   */
   constructor() {
     // ---------- LOST core ----------
     this.lost = new Lost({
@@ -113,8 +117,10 @@ class AiNotebookApp {
     this.init();
   }
 
-  // ---------- Initialization ----------
-
+  /**
+   * Initializes DOM elements and binds events.
+   * Loads initial data from LOST.
+   */
   async init() {
     this.stageEl = document.getElementById("app-stage");
     this.cellsContainer = document.getElementById("cells-container");
@@ -167,6 +173,9 @@ class AiNotebookApp {
     this.onNotebookUpdate(this.lost.getCurrent());
   }
 
+  /**
+   * Sets up contenteditable behavior for the notebook title in the header.
+   */
   setupHeaderTitleEditing() {
     const titleEl = this.uiShell?.elements?.title;
     if (!titleEl) return;
@@ -212,6 +221,9 @@ class AiNotebookApp {
     });
   }
 
+  /**
+   * Binds global event listeners for toolbar and other app-wide actions.
+   */
   bindEvents() {
     // Toolbar
     if (this.notebookModelSelect) {
@@ -241,12 +253,22 @@ class AiNotebookApp {
 
   // ---------- LOST: validation & update ----------
 
+  /**
+   * Validates the notebook data structure.
+   * @param {Object} data - The notebook data to validate.
+   * @returns {boolean} True if valid.
+   */
   validateNotebook(data) {
     if (!data || typeof data !== "object") return false;
     if (!Array.isArray(data.cells)) return false;
     return true;
   }
 
+  /**
+   * Handles notebook updates from LOST.
+   * Normalizes legacy fields and triggers rendering.
+   * @param {Object} item - The updated notebook object.
+   */
   onNotebookUpdate(item) {
     if (!item) return;
     // Normalize legacy fields into local-only flags
@@ -272,6 +294,9 @@ class AiNotebookApp {
 
   // ---------- Notebook operations ----------
 
+  /**
+   * Creates a new notebook with default structure.
+   */
   createNotebook() {
     this.lost.create({
       ...DEFAULT_NOTEBOOK,
@@ -279,19 +304,26 @@ class AiNotebookApp {
     });
   }
 
-  // Cell ops now delegated to this.cellManager
-  // but for compatibility if UI shell calls them directly, we can proxy or assume UI uses cellManager directly?
-  // Actually UI shell mostly uses onNew which calls createNotebook.
-  // The 'addCell' buttons are handled by CellRenderer which uses cellManager now.
-
   // ---------- Helpers ----------
 
+  /**
+   * Gets the preferred reference name for a cell.
+   * @param {Object} cell - The cell object.
+   * @param {number} index - The cell index (0-based).
+   * @returns {string} The reference name (e.g., "my_cell" or "out1").
+   */
   getPreferredRef(cell, index) {
     const name = (cell?.name || "").trim();
     if (name) return name;
     return `out${index + 1}`;
   }
 
+  /**
+   * Builds a reference expression string.
+   * @param {string} base - The base reference name.
+   * @param {Array} path - The property path.
+   * @returns {string} The constructed expression (e.g. "base['key']").
+   */
   buildRefExpression(base, path = []) {
     const parts =
       Array.isArray(path) && path.length
@@ -300,6 +332,12 @@ class AiNotebookApp {
     return `${base}${parts.join("")}`;
   }
 
+  /**
+   * Stores parsed output keys in the template manager's map.
+   * @param {Object} cell - The cell object.
+   * @param {number} index - The cell index.
+   * @param {any} value - The parsed value.
+   */
   storeParsedOutputKeys(cell, index, value) {
     const keys = this.templateManager.getCellKeys(cell, index);
     keys.forEach((k) => this.parsedOutputs.set(k, value));
@@ -307,6 +345,10 @@ class AiNotebookApp {
 
   // ---------- Rendering ----------
 
+  /**
+   * Renders the entire notebook UI.
+   * Handles partial updates and focus preservation.
+   */
   renderNotebook() {
     const item = this.currentNotebook;
     if (!item) return;
@@ -329,30 +371,18 @@ class AiNotebookApp {
     // parsedOutputs is cleared in CellRenderer.render()
 
     // Toolbar actions state
-    const anyRunning = this.promptCellManager.runningCells.size > 0 || this.codeCellManager.isRunning(null); // Fix: codeCellManager.isRunning takes id, but here we want to know if *any* is running. 
-    // codeCellManager doesn't expose a 'size' or 'any' check. I should add it.
-    // For now I'll check private property since I'm in same app space, or access ._codeRunning if exported (it's not exported by default from class instance unless I access it).
-    // Wait, I can't access ._codeRunning easily if I didn't expose getter.
-    // I should fix CodeCellManager to expose isAnyRunning or expose size.
-    // Let's assume I fix it. For now let's use the codeCellManager._codeRunning directly if possible or assume I need to fix it.
-    // CodeCellManager export uses private fields? No, just this._codeRunning = new Set().
+    const anyRunning = this.promptCellManager.runningCells.size > 0 || 
+                       (this.codeCellManager._codeRunning ? this.codeCellManager._codeRunning.size : 0) > 0;
     
-    // I need to update CodeCellManager to expose size or something.
-    // I'll check CodeCellManager content I wrote.
-    // I wrote: this._codeRunning = new Set();
-    // So I can access it via app.codeCellManager._codeRunning.size
-    
-    const codeRunningCount = this.codeCellManager._codeRunning ? this.codeCellManager._codeRunning.size : 0;
-    const anyRunningEffective = this.promptCellManager.runningCells.size > 0 || codeRunningCount > 0;
     const runAllInFlight = this.promptCellManager.runAllInFlight;
     
     if (this.runAllBtn) {
-       this.runAllBtn.disabled = runAllInFlight || anyRunningEffective;
+       this.runAllBtn.disabled = runAllInFlight || anyRunning;
        this.runAllBtn.classList.toggle("is-running", runAllInFlight);
     }
     if (this.stopAllBtn) {
-       this.stopAllBtn.disabled = !anyRunningEffective;
-       this.stopAllBtn.classList.toggle("is-running", anyRunningEffective);
+       this.stopAllBtn.disabled = !anyRunning;
+       this.stopAllBtn.classList.toggle("is-running", anyRunning);
     }
 
     // Toolbar
@@ -363,6 +393,9 @@ class AiNotebookApp {
     }
   }
 
+  /**
+   * Renders the global notebook model selector in the toolbar.
+   */
   renderNotebookModelSelect() {
     const container = this.notebookModelLabel;
     if (!container) return;
@@ -409,6 +442,10 @@ class AiNotebookApp {
     container.appendChild(row);
   }
 
+  /**
+   * Shows the log overlay with the given log data.
+   * @param {Object} log - The log data to display.
+   */
   showLogOverlay(log) {
     this.logOverlay.show(log);
   }

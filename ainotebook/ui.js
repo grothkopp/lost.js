@@ -1,5 +1,11 @@
 import { applyTextareaHeight } from "./utils.js";
 
+/**
+ * Creates a searchable model picker dropdown UI component.
+ * @param {Object} config - Configuration object (selectedId, searchTerm, callbacks).
+ * @param {Object} llmManager - Instance of LlmManager.
+ * @returns {HTMLElement} The wrapper element for the picker.
+ */
 export function createModelPicker(config, llmManager) {
   const {
     selectedId = "",
@@ -109,6 +115,12 @@ export function createModelPicker(config, llmManager) {
   return wrapper;
 }
 
+/**
+ * Creates a UI component for editing additional parameters (as key=value text).
+ * @param {string} initialValue - The initial parameter string.
+ * @param {Function} onChange - Callback when parameters change.
+ * @returns {HTMLElement} The wrapper element.
+ */
 export function createParamsUi(initialValue, onChange) {
   const wrapper = document.createElement("div");
   wrapper.className = "model-params-wrapper";
@@ -177,11 +189,17 @@ export function createParamsUi(initialValue, onChange) {
 }
 
 export class LogOverlay {
+  /**
+   * Manages the overlay for displaying raw LLM request/response logs.
+   */
   constructor() {
     this.overlay = null;
     this.textarea = null;
   }
 
+  /**
+   * Builds the overlay DOM elements if they don't exist.
+   */
   build() {
     if (this.overlay) return;
     const overlay = document.createElement("div");
@@ -218,6 +236,10 @@ export class LogOverlay {
     this.textarea = textarea;
   }
 
+  /**
+   * Shows the overlay with formatted log data.
+   * @param {Object} log - The log data object containing _rawRequest and _rawResponse.
+   */
   show(log) {
     if (!this.overlay) this.build();
     const payload = log

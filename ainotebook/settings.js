@@ -1,6 +1,11 @@
 import { genId } from "./utils.js";
 
 export class SettingsDialog {
+  /**
+   * Manages the LLM settings dialog.
+   * Handles adding/removing providers, configuring API keys, and refreshing models.
+   * @param {Object} llmManager - The LLM manager instance.
+   */
   constructor(llmManager) {
     this.llmManager = llmManager;
     this.dialog = document.getElementById("settingsDialog");
@@ -19,6 +24,9 @@ export class SettingsDialog {
     this.bindEvents();
   }
 
+  /**
+   * Binds event listeners for dialog controls.
+   */
   bindEvents() {
     this.addLlmBtn?.addEventListener("click", () => this.addLlmRow());
     if (this.refreshModelsBtn) {
@@ -35,6 +43,10 @@ export class SettingsDialog {
     });
   }
 
+  /**
+   * Shows the settings dialog modal.
+   * Renders the current settings before showing.
+   */
   show() {
     this.render();
     this.dialog.showModal();
@@ -44,6 +56,10 @@ export class SettingsDialog {
     return this.dialog?.open;
   }
 
+  /**
+   * Renders the settings dialog UI.
+   * Populates provider rows and environment variables.
+   */
   render() {
     if (this.llmListEl) {
       this.llmListEl.innerHTML = "";
@@ -142,6 +158,9 @@ export class SettingsDialog {
     }
   }
 
+  /**
+   * Adds a new empty provider row to the settings.
+   */
   addLlmRow() {
     this.llmManager.settings.providers.push({
       id: genId("provider"),
@@ -152,6 +171,10 @@ export class SettingsDialog {
     this.render();
   }
 
+  /**
+   * Saves settings from the dialog inputs to the LLM manager.
+   * Parses environment variables and filters cached models.
+   */
   saveFromDialog() {
     const providers = this.collectProviders();
     this.llmManager.settings.providers = providers;
@@ -180,6 +203,10 @@ export class SettingsDialog {
     window.dispatchEvent(new CustomEvent("llm-settings-updated"));
   }
 
+  /**
+   * Collects provider configurations from the DOM inputs.
+   * @returns {Array} List of provider objects.
+   */
   collectProviders() {
     if (!this.llmListEl) return [];
     const rows = Array.from(this.llmListEl.querySelectorAll(".llm-row"));
@@ -209,6 +236,10 @@ export class SettingsDialog {
     return providers;
   }
 
+  /**
+   * Refreshes the model cache using the current dialog settings.
+   * saves temporary settings before refreshing.
+   */
   refreshModelCache() {
     // If settings dialog is open, read latest provider edits before fetching
     if (this.isOpen) {

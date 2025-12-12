@@ -1,5 +1,11 @@
 
 export class CodeCellManager {
+  /**
+   * Manages execution of code cells using sandboxed iframes.
+   * Handles running, stopping, and timeouts for code execution.
+   * @param {Object} app - The main AiNotebookApp instance.
+   * @param {Function} updateCells - Callback to update cell state in the app.
+   */
   constructor(app, updateCells) {
     this.app = app;
     this.updateCells = updateCells;
@@ -14,6 +20,12 @@ export class CodeCellManager {
     window.addEventListener("message", this.handleSandboxMessage);
   }
 
+  /**
+   * Ensures a sandbox iframe exists for a specific cell.
+   * Creates one if it doesn't exist or was removed.
+   * @param {string} cellId - The ID of the cell.
+   * @returns {Promise<HTMLIFrameElement>} The sandbox iframe.
+   */
   ensureSandbox(cellId) {
     let iframe = this._sandboxes.get(cellId);
     if (iframe && document.body.contains(iframe)) return Promise.resolve(iframe);
@@ -65,6 +77,10 @@ export class CodeCellManager {
     });
   }
 
+  /**
+   * Handles messages from sandbox iframes (results or errors).
+   * @param {MessageEvent} event - The message event.
+   */
   handleSandboxMessage(event) {
     const data = event?.data || {};
     if (!data || (data.type !== "code-result" && data.type !== "code-error")) {
@@ -146,6 +162,11 @@ export class CodeCellManager {
     );
   }
 
+  /**
+   * Schedules a code run with a debounce delay.
+   * @param {string} cellId - The ID of the cell to run.
+   * @param {number} delayMs - Delay in milliseconds (default 800).
+   */
   scheduleCodeRun(cellId, delayMs = 800) {
     if (!cellId) return;
     const prev = this._codeRunTimers.get(cellId);
@@ -157,6 +178,12 @@ export class CodeCellManager {
     this._codeRunTimers.set(cellId, timer);
   }
 
+  /**
+   * Executes the code in a cell immediately.
+   * Expands templates, creates sandbox, sends code to iframe, and updates state.
+   * @param {string} cellId - The ID of the cell to run.
+   * @returns {Promise<Object>} Result object with type and value/error.
+   */
   async runCodeCell(cellId) {
     // Cancel any pending scheduled run for this cell to prevent double execution
     const prevTimer = this._codeRunTimers.get(cellId);
@@ -219,10 +246,19 @@ export class CodeCellManager {
     });
   }
 
+  /**
+   * Checks if a specific cell is currently executing code.
+   * @param {string} cellId - The cell ID.
+   * @returns {boolean} True if running.
+   */
   isRunning(cellId) {
     return this._codeRunning.has(cellId);
   }
   
+  /**
+   * Stops execution of a code cell by removing its sandbox.
+   * @param {string} cellId - The cell ID to stop.
+   */
   stopCode(cellId) {
     if (!cellId) return;
     
@@ -259,6 +295,9 @@ export class CodeCellManager {
     );
   }
 
+  /**
+   * Stops all running code cells and clears all timers.
+   */
   stopAll() {
     this._codeRunTimers.forEach((t) => clearTimeout(t));
     this._codeRunTimers.clear();
