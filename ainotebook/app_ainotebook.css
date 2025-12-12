@@ -73,10 +73,11 @@
 
 .notebook-toolbar-label {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 4px;
   font-size: 12px;
   color: var(--nb-muted);
+  line-height: 33px;
 }
 
 .notebook-tool-label select {
@@ -248,6 +249,7 @@
   border-left-width: 5px;
   border-left-style: solid;
   max-width: 980px;
+  min-width: 820px;
 }
 
 .cell-header {
@@ -1026,4 +1028,22 @@ dialog#settingsDialog {
 .model-params-textarea::placeholder {
   color: var(--nb-muted);
   opacity: 0.6;
+}
+
+.cell-autorun-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--nb-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  margin-right: 4px;
+  cursor: pointer;
+}
+
+.cell-autorun-label input {
+  margin: 0;
+  cursor: pointer;
 }
