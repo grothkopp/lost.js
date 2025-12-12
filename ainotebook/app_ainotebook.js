@@ -177,6 +177,14 @@ class AiNotebookApp {
     this.cellModelSearch = new Map(); // cellId -> search term
     this.refreshModelsInFlight = false;
     this.pendingFocusState = null;
+    this._sandboxes = new Map(); // cellId -> iframe
+    this._codeRunTimers = new Map(); // cellId -> timeout id
+    this._codeResolvers = new Map(); // cellId -> resolver
+    this._codeRunning = new Set(); // cellId -> running flag
+    this._codeVersions = new Map(); // cellId -> version counter
+    this._codeStartTimes = new Map(); // cellId -> start timestamp
+    this.handleSandboxMessage = this.handleSandboxMessage.bind(this);
+    window.addEventListener("message", this.handleSandboxMessage);
 
     this.bindEvents();
     this.init();
@@ -728,6 +736,7 @@ class AiNotebookApp {
     if (type === "markdown") name = `md_${index}`;
     if (type === "prompt") name = `cell_${index}`;
     if (type === "variable") name = `var_${index}`;
+    if (type === "code") name = `code_${index}`;
 
     const cell = {
       id: genId("cell"),
@@ -738,6 +747,8 @@ class AiNotebookApp {
           ? `# Cell ${index}\n`
           : type === "variable"
           ? ""
+          : type === "code"
+          ? "// JavaScript code runs in a sandbox.\n// Template other cells with {{name}}. Quote strings yourself, e.g. const notes = \"{{notes}}\";\nconst notes = \"{{notes}}\";\nconst summary = `Summary: ${notes}`;\nreturn summary;"
           : `Explain {{md_${index - 1} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
       params: "",
@@ -762,6 +773,7 @@ class AiNotebookApp {
     if (type === "markdown") name = `md_${nextNumber}`;
     if (type === "prompt") name = `cell_${nextNumber}`;
     if (type === "variable") name = `var_${nextNumber}`;
+    if (type === "code") name = `code_${nextNumber}`;
     const cell = {
       id: genId("cell"),
       type,
@@ -771,6 +783,8 @@ class AiNotebookApp {
           ? `# Cell ${nextNumber}\n`
           : type === "variable"
           ? ""
+          : type === "code"
+          ? "// JavaScript code runs in a sandbox.\n// Template other cells with {{name}}. Quote strings yourself, e.g. const notes = \"{{notes}}\";\n// Return a value or assign to `output`.\nreturn \"Hello \" + \"{{notes}}\";"
           : `Explain {{md_${Math.max(1, insertIndex)} || notes}}`,
       systemPrompt: type === "prompt" ? DEFAULT_SYSTEM_PROMPT : "",
       params: "",
@@ -857,7 +871,13 @@ class AiNotebookApp {
   buildReferenceIndex(cells) {
     const map = new Map(); // baseKey -> Set(cellId)
     (Array.isArray(cells) ? cells : []).forEach((cell) => {
-      if (cell.type !== "prompt" && cell.type !== "markdown" && cell.type !== "variable") return;
+      if (
+        cell.type !== "prompt" &&
+        cell.type !== "markdown" &&
+        cell.type !== "variable" &&
+        cell.type !== "code"
+      )
+        return;
       const refs = this.parseReferencesFromText(cell.text || "");
       refs.forEach((ref) => {
         if (!map.has(ref)) map.set(ref, new Set());
@@ -921,7 +941,7 @@ class AiNotebookApp {
       if (reason === "output") {
         cell._stale = false;
         pushQueue(id, false); // refreshed, do not stale downstream
-      } else if (cell.type === "prompt") {
+      } else if (cell.type === "prompt" || cell.type === "code") {
         cell._stale = true;
         staleSeeds.add(cell.id);
         pushQueue(id, true);
@@ -1258,6 +1278,8 @@ class AiNotebookApp {
           ? "Prompt"
           : cell.type === "variable"
           ? "Variable"
+          : cell.type === "code"
+          ? "Code"
           : "Markdown";
       typePill.appendChild(typeLabel);
 
@@ -1280,7 +1302,8 @@ class AiNotebookApp {
       const typeOptions = [
         { value: "markdown", label: "Markdown", className: "type-markdown" },
         { value: "prompt", label: "Prompt", className: "type-prompt" },
-        { value: "variable", label: "Variable", className: "type-variable" }
+        { value: "variable", label: "Variable", className: "type-variable" },
+        { value: "code", label: "Code", className: "type-code" }
       ];
       typeOptions
         .filter((opt) => opt.value !== (cell.type || "markdown"))
@@ -1371,11 +1394,13 @@ class AiNotebookApp {
 
       const statusSpan = document.createElement("span");
       statusSpan.className = "cell-status";
-      const isRunning = this.runningCells.has(cell.id);
+      const promptRunning = this.runningCells.has(cell.id);
+      const codeRunning = this._codeRunning.has(cell.id);
+      const isRunning = promptRunning || codeRunning;
       if (isRunning) {
         root.classList.add("is-running");
       }
-      if (this.runningCells.has(cell.id)) {
+      if (promptRunning) {
         statusSpan.classList.add("running");
         statusSpan.textContent = "Running…";
         const timerSpan = document.createElement("span");
@@ -1385,13 +1410,16 @@ class AiNotebookApp {
           startedAt ? Date.now() - startedAt : 0
         );
         statusSpan.appendChild(timerSpan);
+      } else if (codeRunning) {
+        statusSpan.classList.add("running");
+        statusSpan.textContent = "Running…";
       } else if (cell.error) {
         statusSpan.classList.add("error");
         statusSpan.textContent = "Error";
       } else if (cell._stale) {
         statusSpan.classList.add("stale");
         statusSpan.textContent = "Stale";
-      } else if (cell.lastOutput && cell.type === "prompt") {
+      } else if (cell.lastOutput && (cell.type === "prompt" || cell.type === "code")) {
         statusSpan.textContent = "Done";
       } else {
         statusSpan.textContent = "";
@@ -1489,6 +1517,9 @@ class AiNotebookApp {
         help.textContent =
           "Variable value. Other cells can reference this by name, e.g. {{"
           .concat(cell.name || `var_${index + 1}`, "}}.");
+      } else if (cell.type === "code") {
+        help.textContent =
+          "JavaScript runs in a sandbox. Use {{name}} to template in outputs. Return a value or assign to `output`.";
       } else {
         help.textContent =
           "Prompt. Use {{name}} to reference other cells, e.g. {{notes}} or {{#1}}.";
@@ -1502,9 +1533,11 @@ class AiNotebookApp {
           ? cell.lastOutput || ""
           : cell.type === "variable"
           ? cell.text || ""
+          : cell.type === "code"
+          ? cell.lastOutput || ""
           : cell.text || "";
       const parsed =
-        cell.type === "prompt" || cell.type === "variable"
+        cell.type === "prompt" || cell.type === "variable" || cell.type === "code"
           ? this.parseJsonOutput(outputText)
           : { isJson: false, value: outputText };
       if (!outputText) {
@@ -1528,6 +1561,7 @@ class AiNotebookApp {
       if (
         cell.type === "markdown" ||
         cell.type === "variable" ||
+        cell.type === "code" ||
         (cell.type === "prompt" && !parsed.isJson)
       ) {
         const insertBtn = document.createElement("button");
@@ -1612,6 +1646,23 @@ class AiNotebookApp {
         meta.title = "Click to view request/response log";
         meta.addEventListener("click", () => this.showLogOverlay(info));
         body.appendChild(meta);
+      } else if (cell.type === "code") {
+        const info = cell.lastRunInfo || {};
+        if (cell.error) {
+          const meta = document.createElement("div");
+          meta.className = "cell-run-meta cell-run-meta-error";
+          meta.textContent = `Error: ${cell.error}`;
+          body.appendChild(meta);
+        } else if (info && (info.durationMs != null || info.status)) {
+          const meta = document.createElement("div");
+          meta.className = "cell-run-meta";
+          const parts = [];
+          if (info.status) parts.push(info.status === "ok" ? "Ran" : info.status);
+          if (info.durationMs != null)
+            parts.push(`time: ${this.formatDuration(info.durationMs)}`);
+          meta.textContent = parts.join(" · ");
+          body.appendChild(meta);
+        }
       }
       // Click to insert refs
       output.addEventListener("click", (e) => {
@@ -1644,7 +1695,8 @@ class AiNotebookApp {
       const types = [
         { type: "markdown", label: "+ markdown", cls: "type-markdown" },
         { type: "prompt", label: "+ prompt", cls: "type-prompt" },
-        { type: "variable", label: "+ variable", cls: "type-variable" }
+        { type: "variable", label: "+ variable", cls: "type-variable" },
+        { type: "code", label: "+ code", cls: "type-code" }
       ];
       types.forEach((t) => {
         const pill = document.createElement("button");
@@ -1744,6 +1796,9 @@ class AiNotebookApp {
           ),
           { changedIds: [cell.id] }
         );
+        if (cell.type === "code") {
+          this.scheduleCodeRun(cell.id);
+        }
       });
       textarea.addEventListener("focus", () => {
         this.lastFocusedEditor = textarea;
@@ -1981,6 +2036,8 @@ class AiNotebookApp {
     cells.forEach((c, index) => {
       const value =
         c.type === "prompt"
+          ? c.lastOutput || ""
+          : c.type === "code"
           ? c.lastOutput || ""
           : typeof c.text === "string"
           ? c.text
@@ -2256,7 +2313,193 @@ class AiNotebookApp {
     this.runningStartTimes.clear();
     this.stopRunningTimerLoop();
     this.runAllInFlight = false;
+    // Cancel any pending/running code cells
+    this._codeRunTimers.forEach((t) => clearTimeout(t));
+    this._codeRunTimers.clear();
+    this._codeRunning.clear();
+    this._codeVersions.clear();
+    this._codeStartTimes.clear();
     this.renderNotebook();
+  }
+
+  // ---------- Code execution (sandbox) ----------
+
+  ensureSandbox(cellId) {
+    let iframe = this._sandboxes.get(cellId);
+    if (iframe && document.body.contains(iframe)) return iframe;
+    iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.sandbox = "allow-scripts";
+    iframe.srcdoc = `
+<!doctype html>
+<html>
+<body>
+<script>
+  (function() {
+    const reply = (payload) => {
+      try { parent.postMessage(payload, "*"); } catch (_) {}
+    };
+    window.addEventListener("message", async (event) => {
+      const data = event.data || {};
+      if (data.type !== "code-exec") return;
+      const { cellId, code, version } = data;
+      try {
+        const runner = new Function(\`
+          'use strict';
+          return (async () => {
+            let output;
+            \${code}
+            return typeof output !== "undefined" ? output : undefined;
+          })();
+        \`);
+        const value = await runner();
+        reply({ type: "code-result", cellId, version, value });
+      } catch (err) {
+        reply({
+          type: "code-error",
+          cellId,
+          version,
+          error: (err && err.message) ? err.message : String(err)
+        });
+      }
+    });
+  })();
+<\/script>
+</body>
+</html>`;
+    document.body.appendChild(iframe);
+    this._sandboxes.set(cellId, iframe);
+    return iframe;
+  }
+
+  handleSandboxMessage(event) {
+    const data = event?.data || {};
+    if (!data || (data.type !== "code-result" && data.type !== "code-error")) {
+      return;
+    }
+    const { cellId, version } = data;
+    if (!cellId) return;
+    const currentVersion = this._codeVersions.get(cellId);
+    if (currentVersion == null || version !== currentVersion) return;
+
+    this._codeRunning.delete(cellId);
+    this._codeRunTimers.delete(cellId);
+    const startedAt = this._codeStartTimes.get(cellId);
+    this._codeStartTimes.delete(cellId);
+    const durationMs = startedAt ? Date.now() - startedAt : null;
+
+    if (data.type === "code-error") {
+      const message =
+        data.error && typeof data.error === "string"
+          ? data.error
+          : "Code execution failed.";
+      this.updateCells(
+        (cells) =>
+          cells.map((c) =>
+            c.id === cellId
+              ? {
+                  ...c,
+                  error: message,
+                  lastRunInfo: {
+                    durationMs,
+                    status: "error"
+                  }
+                }
+              : c
+          ),
+        { changedIds: [cellId] }
+      );
+      this.renderNotebook();
+      return;
+    }
+
+    const value = data.value;
+    let serialized = "";
+    if (value === undefined || value === null) {
+      serialized = "";
+    } else if (typeof value === "string") {
+      serialized = value;
+    } else {
+      try {
+        serialized = JSON.stringify(value, null, 2);
+      } catch {
+        serialized = String(value);
+      }
+    }
+
+    this.updateCells(
+      (cells) =>
+        cells.map((c) =>
+          c.id === cellId
+            ? {
+                ...c,
+                lastOutput: serialized,
+                error: "",
+                _stale: false,
+                lastRunInfo: {
+                  durationMs,
+                  status: "ok"
+                }
+              }
+            : c
+        ),
+      { changedIds: [cellId], reason: "output" }
+    );
+    this.renderNotebook();
+  }
+
+  scheduleCodeRun(cellId, delayMs = 800) {
+    if (!cellId) return;
+    const prev = this._codeRunTimers.get(cellId);
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => {
+      this._codeRunTimers.delete(cellId);
+      this.runCodeCell(cellId);
+    }, delayMs);
+    this._codeRunTimers.set(cellId, timer);
+  }
+
+  async runCodeCell(cellId) {
+    const item = this.lost.getCurrent();
+    if (!item) return;
+    const cells = Array.isArray(item.cells) ? item.cells : [];
+    const cell = cells.find((c) => c.id === cellId);
+    if (!cell || cell.type !== "code") return;
+
+    const env = this.buildEnvironment(item);
+    const code = this.expandTemplate(cell.text || "", env);
+    const iframe = this.ensureSandbox(cellId);
+    const nextVersion = (this._codeVersions.get(cellId) || 0) + 1;
+    this._codeVersions.set(cellId, nextVersion);
+    this._codeRunning.add(cellId);
+    this._codeStartTimes.set(cellId, Date.now());
+    this.renderNotebook();
+
+    try {
+      iframe?.contentWindow?.postMessage(
+        {
+          type: "code-exec",
+          cellId,
+          code,
+          version: nextVersion
+        },
+        "*"
+      );
+    } catch (err) {
+      this._codeRunning.delete(cellId);
+      const msg =
+        err && typeof err.message === "string"
+          ? err.message
+          : "Failed to start sandbox.";
+      this.updateCells(
+        (cells) =>
+          cells.map((c) =>
+            c.id === cellId ? { ...c, error: msg } : c
+          ),
+        { changedIds: [cellId] }
+      );
+      this.renderNotebook();
+    }
   }
 
   parseJsonOutput(text) {

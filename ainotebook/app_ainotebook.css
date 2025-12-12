@@ -309,12 +309,21 @@
 }
 
 .cell.type-variable {
-  border-left-color: #d97706;
+  border-left-color: #eab308;
 }
 .cell.type-variable .cell-type-pill {
-  color: #b45309;
-  border-color: rgba(217, 119, 6, 0.35);
-  background: rgba(217, 119, 6, 0.12);
+  color: #ca8a04;
+  border-color: rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.16);
+}
+
+.cell.type-code {
+  border-left-color: #dc2626;
+}
+.cell.type-code .cell-type-pill {
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.14);
 }
 
 .cell.is-running .cell-header {
@@ -411,9 +420,15 @@
 }
 
 .cell-type-option.type-variable {
-  color: #b45309;
-  border-color: rgba(217, 119, 6, 0.35);
-  background: rgba(217, 119, 6, 0.12);
+  color: #ca8a04;
+  border-color: rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.16);
+}
+
+.cell-type-option.type-code {
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.14);
 }
 
 .cell-type-select,
@@ -631,6 +646,9 @@
   color: var(--nb-muted);
   margin-top: 6px;
 }
+.cell-run-meta-error {
+  color: #dc2626;
+}
 
 .cell-output-json {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -749,19 +767,17 @@
   white-space: pre;
 }
 .json-key {
-  color: #2563eb;
+  color: #d97706;
 }
-
 .json-string {
-  color: #16a34a;
+  color: #a855f7;
 }
 
 .json-number {
-  color: #d97706;
+  color: #06b6d4;
 }
-
 .json-boolean {
-  color: #7c3aed;
+  color: #f97316;
 }
 
 .json-null {
