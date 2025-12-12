@@ -45,7 +45,9 @@ export class SettingsDialog {
   }
 
   render() {
-    this.llmListEl.innerHTML = "";
+    if (this.llmListEl) {
+      this.llmListEl.innerHTML = "";
+    }
     const providers = this.llmManager.settings.providers;
     
     if (this.envTextarea) {
@@ -65,76 +67,78 @@ export class SettingsDialog {
       });
     }
 
-    for (const provider of providers) {
-      const row = document.createElement("div");
-      row.className = "llm-row";
-      row.dataset.id = provider.id;
+    if (this.llmListEl) {
+      for (const provider of providers) {
+        const row = document.createElement("div");
+        row.className = "llm-row";
+        row.dataset.id = provider.id;
 
-      // Provider
-      const providerField = document.createElement("div");
-      providerField.className = "llm-field";
-      providerField.innerHTML =
-        '<span>Provider</span>' +
-        '<select class="llm-provider-select">' +
-        '<option value="openai">OpenAI</option>' +
-        '<option value="claude">Anthropic</option>' +
-        '<option value="openrouter">OpenRouter</option>' +
-        '<option value="custom">Custom</option>' +
-        "</select>";
-      const providerSelect = providerField.querySelector("select");
-      providerSelect.value = provider.provider || "openai";
-      row.appendChild(providerField);
+        // Provider
+        const providerField = document.createElement("div");
+        providerField.className = "llm-field";
+        providerField.innerHTML =
+          '<span>Provider</span>' +
+          '<select class="llm-provider-select">' +
+          '<option value="openai">OpenAI</option>' +
+          '<option value="claude">Anthropic</option>' +
+          '<option value="openrouter">OpenRouter</option>' +
+          '<option value="custom">Custom</option>' +
+          "</select>";
+        const providerSelect = providerField.querySelector("select");
+        providerSelect.value = provider.provider || "openai";
+        row.appendChild(providerField);
 
-      // Base URL + key
-      const connField = document.createElement("div");
-      connField.className = "llm-field";
-      connField.innerHTML =
-        '<span>Base URL &amp; API key</span>' +
-        '<div style="display:flex; flex-direction:column; gap:4px;">' +
-        '<input type="text" class="llm-baseurl-input" placeholder="(optional) base URL" />' +
-        '<input type="password" class="llm-apikey-input" placeholder="API key" />' +
-        "</div>";
-      const baseInput = connField.querySelector(".llm-baseurl-input");
-      baseInput.value =
-        provider.baseUrl ||
-        this.llmManager.getProviderDefaultBaseUrl(provider.provider || "openai");
-      connField.querySelector(".llm-apikey-input").value =
-        provider.apiKey || "";
-      row.appendChild(connField);
+        // Base URL + key
+        const connField = document.createElement("div");
+        connField.className = "llm-field";
+        connField.innerHTML =
+          '<span>Base URL &amp; API key</span>' +
+          '<div style="display:flex; flex-direction:column; gap:4px;">' +
+          '<input type="text" class="llm-baseurl-input" placeholder="(optional) base URL" />' +
+          '<input type="password" class="llm-apikey-input" placeholder="API key" />' +
+          "</div>";
+        const baseInput = connField.querySelector(".llm-baseurl-input");
+        baseInput.value =
+          provider.baseUrl ||
+          this.llmManager.getProviderDefaultBaseUrl(provider.provider || "openai");
+        connField.querySelector(".llm-apikey-input").value =
+          provider.apiKey || "";
+        row.appendChild(connField);
 
-      // Actions
-      const actions = document.createElement("div");
-      actions.className = "llm-actions";
-      actions.innerHTML =
-        '<button type="button" class="icon-btn llm-delete-btn" title="Delete">✕</button>';
-      row.appendChild(actions);
+        // Actions
+        const actions = document.createElement("div");
+        actions.className = "llm-actions";
+        actions.innerHTML =
+          '<button type="button" class="icon-btn llm-delete-btn" title="Delete">✕</button>';
+        row.appendChild(actions);
 
-      // Provider change default base URL
-      providerSelect.addEventListener("change", () => {
-        const defaultBase = this.llmManager.getProviderDefaultBaseUrl(
-          providerSelect.value
-        );
-        if (defaultBase) {
-          baseInput.value = defaultBase;
-        } else if (!baseInput.value.trim()) {
-          baseInput.value = "";
-        }
-      });
-
-      // Delete button
-      actions
-        .querySelector(".llm-delete-btn")
-        .addEventListener("click", () => {
-          const idx = this.llmManager.settings.providers.findIndex(
-            (m) => m.id === provider.id
+        // Provider change default base URL
+        providerSelect.addEventListener("change", () => {
+          const defaultBase = this.llmManager.getProviderDefaultBaseUrl(
+            providerSelect.value
           );
-          if (idx >= 0) {
-            this.llmManager.settings.providers.splice(idx, 1);
-            this.render();
+          if (defaultBase) {
+            baseInput.value = defaultBase;
+          } else if (!baseInput.value.trim()) {
+            baseInput.value = "";
           }
         });
 
-      this.llmListEl.appendChild(row);
+        // Delete button
+        actions
+          .querySelector(".llm-delete-btn")
+          .addEventListener("click", () => {
+            const idx = this.llmManager.settings.providers.findIndex(
+              (m) => m.id === provider.id
+            );
+            if (idx >= 0) {
+              this.llmManager.settings.providers.splice(idx, 1);
+              this.render();
+            }
+          });
+
+        this.llmListEl.appendChild(row);
+      }
     }
   }
 

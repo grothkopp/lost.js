@@ -30,23 +30,26 @@ export class LlmManager {
         : [];
       const cacheTimestamp =
         typeof parsed.cacheTimestamp === "number" ? parsed.cacheTimestamp : 0;
-      const normalizedCachedModels = cachedModels.map((m) => {
-        const providersList = Array.isArray(providers) ? providers : [];
-        const provider =
-          providersList.find((p) => p.id === m.providerId) ||
-          providersList.find((p) => p.provider === m.provider);
-        const providerName = provider?.provider || m.provider || "openai";
-        return {
-          ...m,
-          provider: providerName,
-          providerId: m.providerId || provider?.id,
-          apiKey: m.apiKey || provider?.apiKey || "",
-          baseUrl:
-            m.baseUrl ||
-            provider?.baseUrl ||
-            this.getProviderDefaultBaseUrl(providerName)
-        };
-      });
+      const env = typeof parsed.env === "object" ? parsed.env : {};
+      const normalizedCachedModels = cachedModels
+        .filter(m => m && typeof m === 'object')
+        .map((m) => {
+          const providersList = Array.isArray(providers) ? providers : [];
+          const provider =
+            providersList.find((p) => p.id === m.providerId) ||
+            providersList.find((p) => p.provider === m.provider);
+          const providerName = provider?.provider || m.provider || "openai";
+          return {
+            ...m,
+            provider: providerName,
+            providerId: m.providerId || provider?.id,
+            apiKey: m.apiKey || provider?.apiKey || "",
+            baseUrl:
+              m.baseUrl ||
+              provider?.baseUrl ||
+              this.getProviderDefaultBaseUrl(providerName)
+          };
+        });
 
       // Legacy migration
       if (!providers.length && Array.isArray(parsed.models)) {
@@ -71,9 +74,10 @@ export class LlmManager {
         providers,
         cachedModels: normalizedCachedModels,
         cacheTimestamp,
-        env
+        env: env || {}
       };
-    } catch {
+    } catch (err) {
+      console.error("Error loading settings:", err);
       return { ...DEFAULT_LLM_SETTINGS };
     }
   }

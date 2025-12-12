@@ -313,13 +313,16 @@ class AiNotebookApp {
 
     // Skip render if we are editing a text field to prevent focus loss
     const active = document.activeElement;
-    if (active && (
-      active.classList.contains("cell-user-textarea") ||
-      active.classList.contains("cell-system-textarea") ||
-      active.classList.contains("cell-name-input") ||
-      active.classList.contains("model-params-textarea") ||
-      active.dataset.editing === "true"
-    )) {
+    if (
+      active &&
+      (active.classList.contains("cell-user-textarea") ||
+        active.classList.contains("cell-system-textarea") ||
+        active.classList.contains("cell-name-input") ||
+        active.classList.contains("model-params-textarea") ||
+        active.dataset.editing === "true")
+    ) {
+      // Even if we skip a full re-render to preserve focus, still update statuses/outputs.
+      this.cellRenderer.updateStaleStatus(item.cells || []);
       return;
     }
 

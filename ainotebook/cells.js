@@ -335,6 +335,34 @@ export class CellRenderer {
         }
       }
 
+      // Update code meta/error inline without full re-render (important when we skip render during editing)
+      if (cell.type === "code") {
+        let meta = cellEl.querySelector(".cell-run-meta");
+        const info = cell.lastRunInfo || {};
+        if (cell.error) {
+          if (!meta) {
+            meta = document.createElement("div");
+            meta.className = "cell-run-meta cell-run-meta-error";
+            cellEl.querySelector(".cell-body")?.appendChild(meta);
+          }
+          meta.className = "cell-run-meta cell-run-meta-error";
+          meta.textContent = `Error: ${cell.error}`;
+        } else if (info && (info.durationMs != null || info.status)) {
+          if (!meta) {
+            meta = document.createElement("div");
+            meta.className = "cell-run-meta";
+            cellEl.querySelector(".cell-body")?.appendChild(meta);
+          }
+          meta.className = "cell-run-meta";
+          const parts = [];
+          if (info.status) parts.push(info.status === "ok" ? "Ran" : info.status);
+          if (info.durationMs != null) parts.push(`time: ${formatDuration(info.durationMs)}`);
+          meta.textContent = parts.join(" · ");
+        } else if (meta) {
+          meta.remove();
+        }
+      }
+
       // Update run button state if exists
       const runBtn = cellEl.querySelector(".run-btn");
       if (runBtn) {
