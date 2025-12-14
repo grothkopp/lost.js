@@ -303,7 +303,7 @@ class AiNotebookApp {
       }));
     }
     this.currentNotebook = item;
-    this.renderNotebook();
+    this.renderNotebook({ force: true });
   }
 
   // ---------- Notebook operations ----------
@@ -362,14 +362,17 @@ class AiNotebookApp {
   /**
    * Renders the entire notebook UI.
    * Handles partial updates and focus preservation.
+   * @param {Object} [options] - Render options.
+   * @param {boolean} [options.force] - If true, forces a full render even if an input is focused.
    */
-  renderNotebook() {
+  renderNotebook(options = {}) {
     const item = this.currentNotebook;
     if (!item) return;
 
-    // Skip render if we are editing a text field to prevent focus loss
+    // Skip render if we are editing a text field to prevent focus loss (unless forced)
     const active = document.activeElement;
     if (
+      !options.force &&
       active &&
       (active.classList.contains("cell-user-textarea") ||
         active.classList.contains("cell-system-textarea") ||
@@ -381,6 +384,9 @@ class AiNotebookApp {
       this.cellRenderer.updateStaleStatus(item.cells || []);
       return;
     }
+
+    // Save scroll position
+    const scrollY = window.scrollY;
 
     // parsedOutputs is cleared in CellRenderer.render()
 
@@ -404,6 +410,11 @@ class AiNotebookApp {
     this.cellRenderer.render();
     if (this.uiShell?.setTitle) {
       this.uiShell.setTitle(item.title || "Untitled notebook");
+    }
+
+    // Restore scroll position
+    if (scrollY > 0) {
+      window.scrollTo(0, scrollY);
     }
   }
 
