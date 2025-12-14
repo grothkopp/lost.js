@@ -670,22 +670,34 @@
   color: #2563eb;
 }
 
-.output-insert-btn {
+.output-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
+  z-index: 5;
+}
+
+.output-action-btn {
   border: none;
   background: rgba(148, 163, 184, 0.18);
   color: var(--nb-muted);
   font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   cursor: pointer;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
 }
 
-.output-insert-btn:hover {
+.output-action-btn:hover {
   background: rgba(148, 163, 184, 0.28);
+  color: var(--nb-text);
 }
 
 .output-expand-btn {

@@ -1010,6 +1010,40 @@ export class CellRenderer {
       this.outputCache.set(cell.id, outputText);
     }
 
+    // Actions container
+    const actions = document.createElement("div");
+    actions.className = "output-actions";
+
+    // Copy Button
+    let contentToCopy = outputText;
+    if (cell.type === "markdown") {
+      contentToCopy = this.outputCache.get(cell.id) || "";
+    } else if (parsed.isJson) {
+      try {
+        contentToCopy = JSON.stringify(parsed.value, null, 2);
+      } catch (e) {}
+    }
+
+    if (contentToCopy) {
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "output-action-btn";
+      copyBtn.title = "Copy output";
+      copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      copyBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard.writeText(contentToCopy).then(() => {
+          const original = copyBtn.innerHTML;
+          copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+          setTimeout(() => {
+             copyBtn.innerHTML = original;
+          }, 1500);
+        }).catch(err => console.error('Failed to copy', err));
+      });
+      actions.appendChild(copyBtn);
+    }
+
     if (
       cell.type === "markdown" ||
       cell.type === "variable" ||
@@ -1018,15 +1052,19 @@ export class CellRenderer {
     ) {
       const insertBtn = document.createElement("button");
       insertBtn.type = "button";
-      insertBtn.className = "output-insert-btn";
-      insertBtn.textContent = "{}";
+      insertBtn.className = "output-action-btn";
+      insertBtn.textContent = "{ }";
       insertBtn.title = `Insert reference {{ ${baseRef} }}`;
       insertBtn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.insertReference(`{{ ${baseRef} }}`, { ensureVisible: true });
       });
-      output.appendChild(insertBtn);
+      actions.appendChild(insertBtn);
+    }
+
+    if (actions.children.length > 0) {
+      output.appendChild(actions);
     }
 
     this.setupCollapseUi(cell, output);
