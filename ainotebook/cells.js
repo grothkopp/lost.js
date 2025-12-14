@@ -60,7 +60,9 @@ export class CellManager {
     };
 
     cells.push(cell);
-    this.lost.update(item.id, { cells });
+    this.lost.update(item.id, { cells }, false);
+    this.app.currentNotebook = this.lost.getCurrent();
+    this.app.renderNotebook({ force: true });
   }
 
   /**
@@ -101,7 +103,9 @@ export class CellManager {
       autorun: true
     };
     cells.splice(insertIndex, 0, cell);
-    this.lost.update(item.id, { cells });
+    this.lost.update(item.id, { cells }, false);
+    this.app.currentNotebook = this.lost.getCurrent();
+    this.app.renderNotebook({ force: true });
   }
 
   /**
@@ -151,11 +155,15 @@ export class CellManager {
       }
     });
 
-    this.app.isLocalUpdate = true;
-    this.lost.update(item.id, { cells: finalCells });
-    this.app.isLocalUpdate = false;
-    
+    this.lost.update(item.id, { cells: finalCells }, false);
+    this.app.currentNotebook = this.lost.getCurrent();
     this.app.cellRenderer.updateStaleStatus(finalCells);
+
+    // Check if we need a full render (structure/metadata changed)
+    const getSig = (list) => list.map(c => `${c.id}:${c.type}:${c.name}:${c.modelId}:${c.params}:${c.autorun}`).join('|');
+    if (getSig(prevCells) !== getSig(finalCells)) {
+      this.app.renderNotebook({ force: true });
+    }
   }
 
   /**
@@ -318,6 +326,12 @@ export class CellRenderer {
         cellEl.classList.add("stale");
       } else {
         cellEl.classList.remove("stale");
+      }
+
+      if (cell.collapsed) {
+        cellEl.classList.add("collapsed");
+      } else {
+        cellEl.classList.remove("collapsed");
       }
 
       const statusSpan = cellEl.querySelector(".cell-status");
@@ -1120,13 +1134,20 @@ export class CellRenderer {
 
     toggleBtn.addEventListener("click", () => {
       const expanded = !!(cell._outputExpanded ?? cell.outputExpanded);
+      const newExpanded = !expanded;
+      
+      // Update state
       this.app.cellManager.updateCells(
         (cells) =>
           cells.map((c) =>
-            c.id === cell.id ? { ...c, _outputExpanded: !expanded } : c
+            c.id === cell.id ? { ...c, _outputExpanded: newExpanded } : c
           ),
-        { changedIds: [] }
+        { changedIds: [cell.id], reason: "ui" }
       );
+
+      // Update local closure state and DOM immediately
+      cell._outputExpanded = newExpanded;
+      applyCollapseUi();
     });
 
     const applyCollapseUi = () => {

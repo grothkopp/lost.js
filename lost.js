@@ -302,6 +302,9 @@ export class Lost extends EventTarget {
       this.items[id] = { ...this.items[id], ...data };
       this.save();
       if (notify) this.notify();
+      else if (this.currentHash !== undefined) {
+        this.updateURL();
+      }
     }
   }
 

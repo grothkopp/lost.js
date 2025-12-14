@@ -123,10 +123,6 @@ class AiNotebookApp {
     });
     this.modelSearchTermNotebook = "";
     this.cellModelSearch = new Map(); // cellId -> search term
-    
-    // Flag to track if the update originates from the local user interaction
-    // to prevent forced re-renders that would interrupt editing.
-    this.isLocalUpdate = false;
 
     // Listen for settings updates
     window.addEventListener("llm-settings-updated", () => this.renderNotebook());
@@ -216,9 +212,11 @@ class AiNotebookApp {
       const item = this.lost.getCurrent();
       if (!item) return;
       if (text !== item.title) {
-        this.isLocalUpdate = true;
-        this.lost.update(item.id, { title: text });
-        this.isLocalUpdate = false;
+        this.lost.update(item.id, { title: text }, false);
+        this.currentNotebook = this.lost.getCurrent();
+        if (this.uiShell?.setTitle) {
+          this.uiShell.setTitle(this.currentNotebook.title);
+        }
       }
     };
 
@@ -250,9 +248,8 @@ class AiNotebookApp {
       this.notebookModelSelect.addEventListener("change", (e) => {
         const item = this.lost.getCurrent();
         if (!item) return;
-        this.isLocalUpdate = true;
-        this.lost.update(item.id, { notebookModelId: e.target.value });
-        this.isLocalUpdate = false;
+        this.lost.update(item.id, { notebookModelId: e.target.value }, false);
+        this.currentNotebook = this.lost.getCurrent();
       });
     }
 
@@ -311,8 +308,7 @@ class AiNotebookApp {
       }));
     }
     this.currentNotebook = item;
-    // Only force render if it's not a local update (e.g. import, load)
-    this.renderNotebook({ force: !this.isLocalUpdate });
+    this.renderNotebook({ force: true });
   }
 
   // ---------- Notebook operations ----------
@@ -456,9 +452,8 @@ class AiNotebookApp {
         onSelect: (id) => {
           const item = this.currentNotebook;
           if (!item) return;
-          this.isLocalUpdate = true;
-          this.lost.update(item.id, { notebookModelId: id });
-          this.isLocalUpdate = false;
+          this.lost.update(item.id, { notebookModelId: id }, false);
+          this.currentNotebook = this.lost.getCurrent();
         }
       },
       this.llmManager
@@ -470,9 +465,8 @@ class AiNotebookApp {
       (val) => {
         const item = this.currentNotebook;
         if (!item) return;
-        this.isLocalUpdate = true;
-        this.lost.update(item.id, { notebookParams: val });
-        this.isLocalUpdate = false;
+        this.lost.update(item.id, { notebookParams: val }, false);
+        this.currentNotebook = this.lost.getCurrent();
       }
     );
     row.appendChild(paramsUi);
