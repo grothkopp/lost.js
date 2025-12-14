@@ -151,7 +151,10 @@ export class CellManager {
       }
     });
 
+    this.app.isLocalUpdate = true;
     this.lost.update(item.id, { cells: finalCells });
+    this.app.isLocalUpdate = false;
+    
     this.app.cellRenderer.updateStaleStatus(finalCells);
   }
 
