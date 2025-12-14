@@ -24,6 +24,13 @@ export class Lost extends EventTarget {
     this.filter = config.filter || Lost.defaultFilter;
     this.compressionMethod = config.compressionMethod || 'deflate';
     
+    // New Configs
+    this.download = config.download || 'auto'; // yes, no, auto
+    this.fileExtension = config.fileExtension || 'lost';
+    this.downloadFormat = config.downloadFormat || 'binary'; // binary, json
+    this.maxUrlSize = config.maxUrlSize || 8192;
+    this.urlShare = config.urlShare || 'auto'; // yes, no, auto
+    
     this.items = {};
     this.currentId = null;
     
@@ -323,6 +330,29 @@ export class Lost extends EventTarget {
     return true;
   }
 
+  /**
+   * Determine sharing capability based on content length and config.
+   * @param {number} length - Length of encoded content.
+   * @returns {Object} { canShare, offerDownload }
+   */
+  getShareStatus(length) {
+    let canShare = true;
+    if (this.urlShare === 'no') canShare = false;
+    else if (this.urlShare === 'auto') canShare = length <= this.maxUrlSize;
+
+    let offerDownload = false;
+    if (this.download === 'yes') offerDownload = true;
+    else if (this.download === 'no') offerDownload = false;
+    else if (this.download === 'auto') offerDownload = length > this.maxUrlSize;
+
+    // Fallback: If URL sharing is disabled/impossible, offer download (unless explicitly disabled)
+    if (!canShare && this.download !== 'no') {
+        offerDownload = true;
+    }
+    
+    return { canShare, offerDownload };
+  }
+
   // ----- URL Sharing -----
   getQueryKey() {
     const query = window.location.search.slice(1);
@@ -471,12 +501,39 @@ export class Lost extends EventTarget {
 
     const encoded = await this.encode(item);
     if (!encoded) {
-      this.dispatchEvent(new CustomEvent('updateUrl', { detail: '' }));
+      this.dispatchEvent(new CustomEvent('updateUrl', { 
+        detail: { url: '', hash: '', canShare: false, offerDownload: false } 
+      }));
       return;
     }
 
+    const len = encoded.length;
+    const { canShare: shouldUpdateUrl, offerDownload } = this.getShareStatus(len);
+
     const { url, token } = this.buildShareUrl(item.id, encoded);
-    this.dispatchEvent(new CustomEvent('updateUrl', { detail: url }));
+    
+    // Dispatch event with full details for UI
+    this.dispatchEvent(new CustomEvent('updateUrl', { detail: {
+        url: shouldUpdateUrl ? url : null,
+        fullUrl: url,
+        hash: encoded,
+        canShare: shouldUpdateUrl,
+        offerDownload: offerDownload,
+        fileExtension: this.fileExtension
+    }}));
+
+    if (!shouldUpdateUrl) {
+        // If URL sharing is disabled or state is too large, ensure hash is removed
+        const baseUrl = window.location.origin + window.location.pathname;
+        const query = token ? '?' + token : '';
+        const cleanUrl = baseUrl + query;
+
+        if (window.location.hash) {
+             window.history.replaceState(null, '', cleanUrl);
+             this.currentHash = ''; 
+        }
+        return;
+    }
 
     if (this.pendingHashCheck && window.location.hash.slice(1) !== encoded) {
       return;

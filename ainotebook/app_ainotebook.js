@@ -76,7 +76,10 @@ class AiNotebookApp {
     this.lost = new Lost({
       storageKey: STORAGE_KEY,
       defaultData: DEFAULT_NOTEBOOK,
-      validator: (data) => this.validateNotebook(data)
+      validator: (data) => this.validateNotebook(data),
+      fileExtension: 'ainb',
+      downloadFormat: 'json',
+      download: 'yes'
     });
 
     this.lost.addEventListener("update", (e) =>

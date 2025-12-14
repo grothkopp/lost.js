@@ -347,6 +347,14 @@ export class LostUI {
       container.appendChild(copyBtn);
       this.elements.copyBtn = copyBtn;
 
+      const downloadBtn = document.createElement('button');
+      downloadBtn.className = 'download-btn';
+      downloadBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download';
+      downloadBtn.style.display = 'none'; 
+      downloadBtn.addEventListener('click', () => this.handleDownload());
+      container.appendChild(downloadBtn);
+      this.elements.downloadBtn = downloadBtn;
+
       box.appendChild(container);
       footer.appendChild(box);
       c.appendChild(footer);
@@ -381,6 +389,15 @@ export class LostUI {
     shareCopyBtn.id = 'copyBtn';
     shareCopyBtn.textContent = 'Copy';
     urlContainer.appendChild(shareCopyBtn);
+
+    const shareDownloadBtn = document.createElement('button');
+    shareDownloadBtn.className = 'download-btn';
+    shareDownloadBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+    shareDownloadBtn.title = 'Download file';
+    shareDownloadBtn.style.display = 'none';
+    shareDownloadBtn.addEventListener('click', () => this.handleDownload());
+    urlContainer.appendChild(shareDownloadBtn);
+    this.elements.shareDialogDownloadBtn = shareDownloadBtn;
     
     shareDialog.appendChild(urlContainer);
     
@@ -406,7 +423,10 @@ export class LostUI {
     this.elements.shareDialogCopyBtn = shareCopyBtn;
     this.bindCopyButton(shareCopyBtn, shareUrlInput);
     
-    const closeHandler = () => shareDialog.close();
+    const closeHandler = () => {
+        shareDialog.close();
+        this.dialogShareContext = null;
+    };
     closeBtn.addEventListener('click', closeHandler);
     this.elements.shareDialogCloseBtn = { button: closeBtn, handler: closeHandler };
   }
@@ -425,6 +445,7 @@ export class LostUI {
   load() {
     
     window.addEventListener('load', () => {
+      this.setupDropzone();
       setTimeout(() => {
         this.updateImportButtonVisibility();
       }, 100);
@@ -433,12 +454,48 @@ export class LostUI {
 
   /**
    * Update the share box input value.
-   * @param {string} url - The URL to display.
+   * @param {Object|string} detail - The update detail (url or object).
    */
-  updateShareBox(url) {
-    if (url !== undefined) {
-      this.setShareUrl(url);
+  updateShareBox(detail) {
+    let url = detail;
+    let canShare = true;
+    let offerDownload = false;
+
+    if (typeof detail === 'object' && detail !== null) {
+        url = detail.url;
+        canShare = detail.canShare !== false;
+        offerDownload = detail.offerDownload === true;
+        this.lastShareDetail = detail;
+    } else {
+        // Legacy/simple string support
+        this.lastShareDetail = { url, hash: null }; 
     }
+
+    // Update Input
+    if (this.elements.shareInput) {
+      this.elements.shareInput.value = url || '';
+      // If no URL (too long or disabled), maybe show placeholder or empty?
+      if (!url && canShare === false) {
+          this.elements.shareInput.placeholder = 'State too large for URL sharing';
+      } else {
+          this.elements.shareInput.placeholder = '';
+      }
+    }
+    if (this.elements.shareDialogInput) {
+        this.elements.shareDialogInput.value = url || '';
+    }
+
+    // Toggle Buttons
+    const toggle = (el, show) => { if (el) el.style.display = show ? 'flex' : 'none'; };
+    
+    // Copy button visible if we have a URL and sharing is allowed
+    const showCopy = !!url && canShare;
+    toggle(this.elements.copyBtn, showCopy);
+    toggle(this.elements.shareDialogCopyBtn, showCopy);
+    
+    // Download button
+    toggle(this.elements.downloadBtn, offerDownload);
+    toggle(this.elements.shareDialogDownloadBtn, offerDownload);
   }
 
   /**
@@ -603,7 +660,10 @@ export class LostUI {
       if (this.elements.shareDialogCloseBtn && this.elements.shareDialogCloseBtn.button && this.elements.shareDialogCloseBtn.handler) {
         this.elements.shareDialogCloseBtn.button.removeEventListener('click', this.elements.shareDialogCloseBtn.handler);
       }
-      const closeHandler = () => dialog.close();
+      const closeHandler = () => {
+          dialog.close();
+          this.dialogShareContext = null;
+      };
       closeBtn.addEventListener('click', closeHandler);
       this.elements.shareDialogCloseBtn = { button: closeBtn, handler: closeHandler };
     }
@@ -611,26 +671,68 @@ export class LostUI {
 
   async shareItem(id) {
     try {
-      const url = await this.lost.getShareUrl(id);
-      if (!url) {
-        alert('Failed to create shareable link.');
+      const item = this.lost.getItem(id);
+      if (!item) return;
+
+      const encoded = await this.lost.encode(item);
+      if (!encoded) {
+        alert('Failed to encode item.');
         return;
       }
 
+      const len = encoded.length;
+      const { canShare, offerDownload } = this.lost.getShareStatus(len);
+
+      let url = '';
+      if (canShare) {
+          const res = this.lost.buildShareUrl(item.id, encoded);
+          url = res.url;
+      }
+
+      // Update Dialog UI
       if (this.elements.shareDialogInput) {
         this.elements.shareDialogInput.value = url;
-      } else {
-        this.setShareUrl(url);
+        this.elements.shareDialogInput.placeholder = canShare ? '' : 'State too large for URL sharing';
+      }
+      
+      // We need to set this.lastShareDetail for handleDownload to work
+      // handleDownload uses this.lost.getCurrent(), but here we might be sharing a non-current item.
+      // We should probably update handleDownload to accept an ID or hash, OR we just temporarily mock it?
+      // Better: Update handleDownload to be more flexible, or just store the hash for this dialog context.
+      
+      // Issue: handleDownload gets current item to derive filename. 
+      // If we are sharing a sidebar item (not current), handleDownload will download the WRONG item if we rely on getCurrent().
+      
+      // Fix: Store specific dialog context
+      this.dialogShareContext = { hash: encoded, item: item };
+
+      // Update buttons visibility
+      const toggle = (el, show) => { if (el) el.style.display = show ? 'flex' : 'none'; };
+      
+      const showCopy = !!url && canShare;
+      toggle(this.elements.shareDialogCopyBtn, showCopy);
+      toggle(this.elements.shareDialogDownloadBtn, offerDownload);
+
+      // Re-bind download button in dialog to use the context
+      if (this.elements.shareDialogDownloadBtn) {
+          // Remove old listeners? It's hard to remove anonymous listeners. 
+          // We can just ensure handleDownload checks dialogShareContext first.
+          // Or simpler: We create a new button or assume handleDownload knows what to do.
       }
 
       if (this.elements.shareDialog && typeof this.elements.shareDialog.showModal === 'function') {
         this.elements.shareDialog.showModal();
       } else {
-        try {
-          await navigator.clipboard.writeText(url);
-          alert('Share link copied to clipboard.');
-        } catch (copyError) {
-          alert(url);
+        // Fallback for non-dialog browsers?
+        if (canShare) {
+             try {
+                await navigator.clipboard.writeText(url);
+                alert('Share link copied to clipboard.');
+             } catch (copyError) {
+                alert(url);
+             }
+        } else {
+            alert('Item too large to share via URL.');
         }
       }
     } catch (err) {
@@ -734,5 +836,220 @@ export class LostUI {
       console.error('Clipboard import error:', err);
       alert('Failed to read from clipboard: ' + err.message);
     }
+  }
+
+  async handleDownload() {
+      // Priority: 1. Dialog context (if open), 2. Current item (if footer/share box)
+      // Actually we need to distinguish where the click came from or just prefer context if it's set and we assume dialog is modal.
+      // Since dialog is modal, if context is set, it's likely the intended target.
+      // But we should clear context when dialog closes.
+      
+      let item, hash;
+      
+      if (this.elements.shareDialog && this.elements.shareDialog.open && this.dialogShareContext) {
+          item = this.dialogShareContext.item;
+          hash = this.dialogShareContext.hash;
+      } else {
+          item = this.lost.getCurrent();
+          if (this.lastShareDetail) {
+              hash = this.lastShareDetail.hash;
+          }
+      }
+
+      if (!item) return;
+
+      const title = (item.title) ? item.title : 'lost-export';
+      const safeTitle = title.replace(/[^a-z0-9\-_]/gi, '_');
+      const ext = this.lost.fileExtension || 'lost';
+      const filename = `${safeTitle}.${ext}`;
+
+      if (this.lost.downloadFormat === 'json') {
+          try {
+              // Filter using lost filter before exporting
+              const filtered = this.lost.filter(item);
+              const jsonStr = JSON.stringify(filtered, null, 2);
+              const blob = new Blob([jsonStr], { type: 'application/json' });
+              this.triggerDownload(blob, filename);
+          } catch (e) {
+              console.error('JSON export failed:', e);
+              alert('Failed to export JSON.');
+          }
+      } else {
+          // Binary (default)
+          if (!hash) {
+              // Re-encode if missing
+               const encoded = await this.lost.encode(item);
+               if(encoded) this.downloadState(encoded, filename);
+               else alert('Failed to encode item.');
+               return;
+          }
+          this.downloadState(hash, filename);
+      }
+  }
+
+  triggerDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  }
+
+  downloadState(hash, filename) {
+      if (!hash) return;
+      
+      let base64 = hash;
+      // Strip prefix if present
+      if (hash.startsWith('!') || hash.startsWith('$')) {
+          base64 = hash.slice(1);
+      }
+      
+      try {
+          const binaryString = atob(base64);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const blob = new Blob([bytes], { type: 'application/octet-stream' });
+          this.triggerDownload(blob, filename);
+      } catch (e) {
+          console.error('Download failed:', e);
+          alert('Failed to generate download file.');
+      }
+  }
+
+  setupDropzone() {
+      // Check if download is enabled/auto/yes? 
+      const setting = this.lost.download;
+      if (setting === 'no') return;
+
+      const dropzone = document.createElement('div');
+      dropzone.className = 'file-dropzone';
+      dropzone.innerHTML = `
+        <div class="dropzone-content">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"></path><path d="M14 2v6h6"></path><path d="m3 15 4-4 4 4"></path><path d="M7 11v11"></path></svg>
+            <div>Drop file to import</div>
+        </div>`;
+      dropzone.style.display = 'none';
+      document.body.appendChild(dropzone);
+      this.elements.dropzone = dropzone;
+
+      let dragCounter = 0;
+
+      window.addEventListener('dragenter', (e) => {
+          if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+             e.preventDefault();
+             dragCounter++;
+             dropzone.style.display = 'flex';
+          }
+      });
+
+      window.addEventListener('dragover', (e) => {
+          e.preventDefault(); 
+      });
+
+      window.addEventListener('dragleave', (e) => {
+          dragCounter--;
+          if (dragCounter <= 0) { 
+              dragCounter = 0;
+              dropzone.style.display = 'none';
+          }
+      });
+
+      window.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          dragCounter = 0;
+          dropzone.style.display = 'none';
+
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              const file = e.dataTransfer.files[0];
+              
+              // Validate Extension
+              const ext = this.lost.fileExtension || 'lost';
+              if (!file.name.toLowerCase().endsWith('.' + ext.toLowerCase())) {
+                  alert(`Invalid file type. Please drop a .${ext} file.`);
+                  return;
+              }
+
+              await this.importFile(file);
+          }
+      });
+  }
+
+  async importFile(file) {
+      try {
+          // First, try reading as text to see if it is JSON
+          const text = await file.text();
+          try {
+              // Try parsing as JSON
+              const data = JSON.parse(text);
+              if (data && typeof data === 'object') {
+                  // It's a JSON file
+                  // Verify structure lightly? importAndConfirm handles validation via validator
+                  // We need to simulate import result or use create/update directly.
+                  // importAndConfirm expects hash.
+                  // We can create a temporary "hash" or just reimplement the confirm logic here.
+                  
+                  // Reusing import logic by "mocking" importFromHash result:
+                  // Actually, better to just reuse the confirm logic.
+                  
+                  const existing = this.lost.getItem(data.id);
+                  const result = { 
+                      status: existing ? 'exists_diff' : 'new', 
+                      data: data,
+                      existing: existing 
+                  };
+                  
+                  if (existing && this.lost.constructor.deepEqual(this.lost.filter(existing), this.lost.filter(data))) {
+                       result.status = 'exists_identical';
+                  }
+
+                  // Handle confirm
+                  if (result.status === 'exists_identical') {
+                      this.lost.setCurrent(data.id);
+                      return;
+                  }
+
+                  const message = result.existing
+                    ? `"${result.data.title}" already exists. Do you want to update it?`
+                    : `Do you want to import: "${result.data.title}"`;
+                  
+                  if (confirm(message)) {
+                      if (result.existing) this.lost.update(result.data.id, result.data);
+                      else this.lost.create(result.data);
+                      this.lost.setCurrent(result.data.id);
+                  }
+                  return;
+              }
+          } catch (jsonErr) {
+              // Not JSON, continue to binary import
+          }
+
+          // Binary Import
+          const arrayBuffer = await file.arrayBuffer();
+          let binary = '';
+          const bytes = new Uint8Array(arrayBuffer);
+          const len = bytes.byteLength;
+          for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          
+          let prefix = '!'; 
+          if (this.lost.compressionMethod === 'gzip') prefix = '$';
+          else if (this.lost.compressionMethod === 'none') prefix = '';
+          
+          const hash = prefix + base64;
+          await this.lost.importAndConfirm(hash);
+          
+      } catch (e) {
+          console.error('Import file failed:', e);
+          alert('Failed to read file.');
+      }
   }
 }
