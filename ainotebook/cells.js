@@ -199,6 +199,10 @@ export class CellManager {
     changedIds.forEach((id) => {
       const cell = next.find((c) => c.id === id);
       if (!cell) return;
+      if (reason === "ui") {
+        // UI changes (e.g. collapse) do not affect staleness
+        return;
+      }
       if (reason === "output") {
         cell._stale = false;
         // Output updated: mark this cell as fresh, but propagate staleness to its dependents
@@ -306,6 +310,12 @@ export class CellRenderer {
     cells.forEach((cell, index) => {
       const cellEl = this.container.querySelector(`article.cell[data-id="${cell.id}"]`);
       if (!cellEl) return;
+
+      if (cell._stale) {
+        cellEl.classList.add("stale");
+      } else {
+        cellEl.classList.remove("stale");
+      }
 
       const statusSpan = cellEl.querySelector(".cell-status");
       if (statusSpan) {
@@ -422,6 +432,12 @@ export class CellRenderer {
     const root = document.createElement("article");
     const typeClass = cell.type ? `type-${cell.type}` : "type-markdown";
     root.className = `cell ${typeClass}`;
+    if (cell.collapsed) {
+      root.classList.add("collapsed");
+    }
+    if (cell._stale) {
+      root.classList.add("stale");
+    }
     root.dataset.id = cell.id;
     const baseRef = this.app.getPreferredRef(cell, index);
 
@@ -709,6 +725,16 @@ export class CellRenderer {
     delBtn.textContent = "✕";
     actions.appendChild(delBtn);
 
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "icon-btn toggle-btn";
+    const isCollapsed = !!cell.collapsed;
+    toggleBtn.title = isCollapsed ? "Expand cell" : "Collapse cell";
+    toggleBtn.innerHTML = isCollapsed
+      ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+      : '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>';
+    actions.appendChild(toggleBtn);
+
     header.appendChild(actions);
 
     // Listeners
@@ -761,6 +787,16 @@ export class CellRenderer {
       const ok = confirm("Delete this cell?");
       if (!ok) return;
       this.app.cellManager.updateCells((cells) => cells.filter((c) => c.id !== cell.id));
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      this.app.cellManager.updateCells(
+        (cells) =>
+          cells.map((c) =>
+            c.id === cell.id ? { ...c, collapsed: !c.collapsed } : c
+          ),
+        { changedIds: [cell.id], reason: "ui" }
+      );
     });
 
     return header;
