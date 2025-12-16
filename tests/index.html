@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOST Framework Tests</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --pass: #3fb950;
+            --fail: #f85149;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        h1 .logo {
+            font-size: 28px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #2ea043;
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        button.secondary {
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        
+        button.secondary:hover {
+            background: var(--border);
+        }
+        
+        .status {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        
+        #results {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .test-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        
+        .test-summary.pass {
+            background: rgba(63, 185, 80, 0.15);
+            border: 1px solid rgba(63, 185, 80, 0.4);
+            color: var(--pass);
+        }
+        
+        .test-summary.fail {
+            background: rgba(248, 81, 73, 0.15);
+            border: 1px solid rgba(248, 81, 73, 0.4);
+            color: var(--fail);
+        }
+        
+        .test-output {
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-muted);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-muted);
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--pass);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .test-suites {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        
+        .suite-badge {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .suite-badge.active {
+            border-color: var(--pass);
+            color: var(--pass);
+        }
+    </style>
+</head>
+<body>
+    <h1>
+        <span class="logo">🧪</span>
+        LOST Framework Tests
+    </h1>
+    
+    <div class="test-suites">
+        <span class="suite-badge" id="badge-lost">lost.js</span>
+        <span class="suite-badge" id="badge-lostui">lost-ui.js</span>
+        <span class="suite-badge" id="badge-wheel">wheel</span>
+        <span class="suite-badge" id="badge-ainotebook">ainotebook</span>
+    </div>
+    
+    <div class="controls">
+        <button id="runBtn">Run All Tests</button>
+        <button id="clearBtn" class="secondary">Clear Results</button>
+    </div>
+    
+    <div class="status" id="status">Click "Run All Tests" to begin.</div>
+    
+    <div id="results">
+        <div class="test-output">Waiting for test run...</div>
+    </div>
+    
+    <!-- Hidden iframe for test isolation -->
+    <iframe id="testFrame" src="about:blank" style="display:none;"></iframe>
+
+    <script>
+        const runBtn = document.getElementById('runBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const status = document.getElementById('status');
+        const results = document.getElementById('results');
+        const testFrame = document.getElementById('testFrame');
+        
+        const badges = {
+            lost: document.getElementById('badge-lost'),
+            lostui: document.getElementById('badge-lostui'),
+            wheel: document.getElementById('badge-wheel'),
+            ainotebook: document.getElementById('badge-ainotebook')
+        };
+        
+        function escapeHtml(str) {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+        
+        function showLoading() {
+            results.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <span>Running tests...</span>
+                </div>
+            `;
+            runBtn.disabled = true;
+        }
+        
+        function setBadgeActive(name) {
+            if (badges[name]) badges[name].classList.add('active');
+        }
+        
+        function resetBadges() {
+            Object.values(badges).forEach(b => b.classList.remove('active'));
+        }
+        
+        function renderResults(data) {
+            const { passed, failed, output } = data;
+            const total = passed + failed;
+            const statusClass = failed === 0 ? 'pass' : 'fail';
+            
+            results.innerHTML = `
+                <div class="test-summary ${statusClass}">
+                    <strong>${failed === 0 ? '✅ All tests passed!' : '❌ Some tests failed'}</strong>
+                    <span>${passed}/${total} passed</span>
+                </div>
+                <pre class="test-output">${escapeHtml(output)}</pre>
+            `;
+            
+            status.textContent = `Completed: ${passed} passed, ${failed} failed`;
+            runBtn.disabled = false;
+        }
+        
+        function renderError(err) {
+            results.innerHTML = `
+                <div class="test-summary fail">
+                    <strong>❌ Test Error</strong>
+                </div>
+                <pre class="test-output">${escapeHtml(err.message)}\n\n${escapeHtml(err.stack || '')}</pre>
+            `;
+            status.textContent = 'Test run failed with error';
+            runBtn.disabled = false;
+        }
+        
+        // Handle messages from test iframe
+        window.addEventListener('message', (e) => {
+            const data = e.data;
+            if (!data || !data.type) return;
+            
+            switch (data.type) {
+                case 'ready':
+                    // Iframe loaded, start tests
+                    testFrame.contentWindow.postMessage('run', '*');
+                    break;
+                case 'status':
+                    status.textContent = data.message;
+                    break;
+                case 'badge':
+                    setBadgeActive(data.name);
+                    break;
+                case 'results':
+                    renderResults(data);
+                    break;
+                case 'error':
+                    renderError(data);
+                    break;
+            }
+        });
+        
+        function runTests() {
+            showLoading();
+            resetBadges();
+            status.textContent = 'Initializing test frame...';
+            
+            // Load fresh iframe to run tests in isolated context
+            testFrame.src = 'test-frame.html?' + Date.now();
+        }
+        
+        function clearResults() {
+            resetBadges();
+            results.innerHTML = '<div class="test-output">Waiting for test run...</div>';
+            status.textContent = 'Click "Run All Tests" to begin.';
+            testFrame.src = 'about:blank';
+        }
+        
+        runBtn.addEventListener('click', runTests);
+        clearBtn.addEventListener('click', clearResults);
+        
+        // Auto-run on load if ?autorun in URL
+        if (window.location.search.includes('autorun')) {
+            runTests();
+        }
+    </script>
+</body>
+</html>

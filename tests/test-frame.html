@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Frame</title>
+    <style>
+        /* Hidden test containers */
+        body { margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { runner } from './test-runner.js';
+
+        // Load all test modules
+        async function loadAndRunTests() {
+            try {
+                // Notify parent of progress
+                const notify = (msg) => parent.postMessage({ type: 'status', message: msg }, '*');
+                const badge = (name) => parent.postMessage({ type: 'badge', name }, '*');
+
+                notify('Loading lost.js tests...');
+                badge('lost');
+                await import('./lost.test.js');
+
+                notify('Loading lost-ui.js tests...');
+                badge('lostui');
+                await import('./lost-ui.test.js');
+
+                notify('Loading wheel tests...');
+                badge('wheel');
+                await import('./wheel.test.js');
+
+                notify('Loading ainotebook tests...');
+                badge('ainotebook');
+                await import('./ainotebook.test.js');
+
+                notify('Executing test suites...');
+
+                // Run all tests
+                const results = await runner.run();
+
+                // Send results to parent
+                parent.postMessage({
+                    type: 'results',
+                    passed: results.passed,
+                    failed: results.failed,
+                    output: results.output,
+                    errors: results.errors
+                }, '*');
+
+            } catch (err) {
+                parent.postMessage({
+                    type: 'error',
+                    message: err.message,
+                    stack: err.stack
+                }, '*');
+            }
+        }
+
+        // Start when parent requests
+        window.addEventListener('message', (e) => {
+            if (e.data === 'run') {
+                loadAndRunTests();
+            }
+        });
+
+        // Notify parent we're ready
+        parent.postMessage({ type: 'ready' }, '*');
+    </script>
+</body>
+</html>
