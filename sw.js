@@ -1,15 +1,27 @@
-const CACHE = 'wheel-of-choices-v2';
+const CACHE = 'lost-js-v2';
 const ASSETS = [
   './',
   './lost.css',
   './lost.js',
   './lost-ui.js',
+  './vendor/lost/lost.css',
+  './vendor/lost/lost.js',
+  './vendor/lost/lost-ui.js',
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).then(()=> self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(
+      ASSETS.map(async (url) => {
+        try {
+          await cache.add(url);
+        } catch (_) {
+        }
+      })
+    );
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
@@ -29,12 +41,10 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(request.url);
     let cacheKey = request;
-    //if (url.pathname === '/' || url.pathname.endsWith('/index.html')) {
-      const cleanUrl = new URL(request.url);
-      cleanUrl.search = '';
-      cleanUrl.hash = '';
-      cacheKey = cleanUrl.toString();
-    //}
+    const cleanUrl = new URL(request.url);
+    cleanUrl.search = '';
+    cleanUrl.hash = '';
+    cacheKey = cleanUrl.toString();
 
     const cached = await cache.match(cacheKey);
 
@@ -51,8 +61,6 @@ self.addEventListener('fetch', (event) => {
       const networkResponse = await fetchPromise;
       if (networkResponse) return networkResponse;
       if (cached) return cached;
-      const fallback = await cache.match('./index.html');
-      if (fallback) return fallback;
       return new Response('', { status: 503, statusText: 'Offline' });
     }
 

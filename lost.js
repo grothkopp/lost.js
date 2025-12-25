@@ -4,6 +4,13 @@
  * Handles localStorage persistence, URL hash sharing (compression/encoding),
  * and object lifecycle (create, read, update, delete).
  */
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  if (!window.__lostSwRegistered) {
+    window.__lostSwRegistered = true;
+    navigator.serviceWorker.register('./sw.js', { scope: '/' }).catch(() => {});
+  }
+}
+
 export class Lost extends EventTarget {
   /**
    * Create a new Lost instance.
@@ -180,6 +187,8 @@ export class Lost extends EventTarget {
         };
         this.currentId = id;
         this.save();
+        this.initUrlHandling();
+        this.notify();
         return;
       }
       

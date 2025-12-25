@@ -443,7 +443,6 @@ export class LostUI {
    * Initialize UI and start listening to window events (load).
    */
   load() {
-    
     window.addEventListener('load', () => {
       this.setupDropzone();
       setTimeout(() => {
