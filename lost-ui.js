@@ -303,6 +303,15 @@ export class LostUI {
         this.elements.importBtn = importBtn;
       }
 
+      // Load from file button (shown when download is enabled)
+      const loadFileBtn = document.createElement('button');
+      loadFileBtn.className = 'new-item-btn';
+      loadFileBtn.style.display = 'none'; // Will be shown based on download setting
+      loadFileBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"></path><path d="M14 2v6h6"></path><path d="m3 15 4-4 4 4"></path><path d="M7 11v11"></path></svg> Load from file';
+      loadFileBtn.addEventListener('click', () => this.openFileDialog());
+      sbFooter.appendChild(loadFileBtn);
+      this.elements.loadFileBtn = loadFileBtn;
+
       if (this.config.sidebar.onNew) {
         const newBtn = document.createElement('button');
         newBtn.className = 'new-item-btn';
@@ -760,22 +769,29 @@ export class LostUI {
   }
 
   updateImportButtonVisibility() {
-      if (!this.elements.importBtn) return;
+      if (this.elements.importBtn) {
+          const setting = this.config.sidebar.showImport;
+          const isStandalone = this.isStandalone();
 
-      const setting = this.config.sidebar.showImport;
-      const isStandalone = this.isStandalone();
+          // true = always show, false = never show, null/undefined = auto (only standalone)
+          const shouldShow = (setting === true) || (setting !== false && isStandalone);
 
-      // true = always show, false = never show, null/undefined = auto (only standalone)
-      const shouldShow = (setting === true) || (setting !== false && isStandalone);
-
-      if (shouldShow) {
-          this.elements.importBtn.style.display = 'flex';
-          if (isStandalone) {
-             // Update label for standalone context where clipboard is primary
-             this.elements.importBtn.childNodes[this.elements.importBtn.childNodes.length - 1].textContent = ' New from Clipboard';
+          if (shouldShow) {
+              this.elements.importBtn.style.display = 'flex';
+              if (isStandalone) {
+                 // Update label for standalone context where clipboard is primary
+                 this.elements.importBtn.childNodes[this.elements.importBtn.childNodes.length - 1].textContent = ' New from Clipboard';
+              }
+          } else {
+              this.elements.importBtn.style.display = 'none';
           }
-      } else {
-          this.elements.importBtn.style.display = 'none';
+      }
+
+      // Show load file button if download is enabled (yes or auto)
+      if (this.elements.loadFileBtn) {
+          const downloadSetting = this.lost.download;
+          const shouldShowLoadFile = downloadSetting === 'yes' || downloadSetting === 'auto';
+          this.elements.loadFileBtn.style.display = shouldShowLoadFile ? 'flex' : 'none';
       }
   }
 
@@ -835,6 +851,30 @@ export class LostUI {
       console.error('Clipboard import error:', err);
       alert('Failed to read from clipboard: ' + err.message);
     }
+  }
+
+  openFileDialog() {
+      const ext = this.lost.fileExtension || 'lost';
+      
+      // Create a hidden file input
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = `.${ext}`;
+      fileInput.style.display = 'none';
+      
+      fileInput.addEventListener('change', async (e) => {
+          if (e.target.files && e.target.files.length > 0) {
+              const file = e.target.files[0];
+              await this.importFile(file);
+              this.closeSidebar();
+          }
+          // Clean up
+          document.body.removeChild(fileInput);
+      });
+      
+      // Add to DOM, trigger click, and it will be removed after selection
+      document.body.appendChild(fileInput);
+      fileInput.click();
   }
 
   async handleDownload() {
